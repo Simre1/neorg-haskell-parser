@@ -15,11 +15,14 @@ For quicker development, I have set up a bash script in `testing/ghcid.sh` which
 
 ### Neorg Parser
 
+#### Legend
+
 - Implemented and tested: :heavy_check_mark:
 - Implemented and not tested: :white_check_mark: 
 - Partly implemented: :heavy_multiplication_x:
 - Not implemented: :x:
 
+#### Implemented features
 
 - Attached Modifiers :heavy_multiplication_x:
 - Intersecting modifier :x:
