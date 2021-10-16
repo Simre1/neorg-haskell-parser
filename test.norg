@@ -1,0 +1,19 @@
+@document.meta
+	title: test
+	description: 
+	author: simon
+	categories: 
+	created: 2021-09-28
+	version: 0.1
+@end
+
+test
+
+* test
+
+ ** really
+
+  *** wow
+
+- really
+
