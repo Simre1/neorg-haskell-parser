@@ -1,23 +1,22 @@
 module Neorg where
 
 import Neorg.Document
-import Neorg.Parser
 
 import qualified Data.Text.IO as T
 import Data.Either
 
 import qualified Data.ByteString.Lazy as B
 import Text.Megaparsec (parse, errorBundlePretty)
-
-
-test :: IO ()
-test = do
-  file <- T.readFile "testing/test.norg"
-  let res = parse document "testing/test.norg" file
-  case res of
-    Right doc -> T.putStrLn $ renderDocument doc
-    Left err -> putStrLn $ errorBundlePretty err
-
+-- 
+-- 
+-- test :: IO ()
+-- test = do
+--   file <- T.readFile "testing/test.norg"
+--   let res = parse document "testing/test.norg" file
+--   case res of
+--     Right doc -> T.putStrLn $ renderDocument doc
+--     Left err -> putStrLn $ errorBundlePretty err
+-- 
 
 -- parse :: FilePath -> IO (Either String (Document tags))
 -- parse path = do

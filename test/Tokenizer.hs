@@ -16,7 +16,9 @@ tokenizerTests =
     [ testCase "EOF" $ makeTokens "" @?= [End],
       attachedTokenTests,
       detachedTokenTests,
-      breaks
+      breaks,
+      delimitingTokens,
+      trailingModifier
     ]
 
 attachedTokenTests :: TestTree
@@ -53,8 +55,8 @@ detachedTokenTests =
     "Detached tokens"
     [ testCase "I0 Heading" $ makeTokens "* test" @?= [heading I0, Word "test", End],
       testCase "Sub Heading" $ makeTokens "*   main \n ** sub" @?= [heading I0, Word "main ", heading I1, Word "sub", End],
-      testCase "Simple List" $ makeTokens "- list1\n- list2" @?= [uList I0, Word "list1", uList I0, Word "list2", End],
-      testCase "Simple List with Text" $
+      testCase "Simple unordered List" $ makeTokens "- list1\n- list2" @?= [uList I0, Word "list1", uList I0, Word "list2", End],
+      testCase "Simple unorderd List with Text" $
         makeTokens "- list1: test1\n- list2: test2"
           @?= [uList I0, Word "list1", Word ": ", Word "test1", uList I0, Word "list2", Word ": ", Word "test2", End],
       testCase
@@ -77,8 +79,35 @@ detachedTokenTests =
                 Word ": ",
                 Word "level1",
                 End
-              ]
+              ],
+      testCase "Simple ordered List" $ makeTokens "~ list1\n~ list2" @?= [oList I0, Word "list1", oList I0, Word "list2", End],
+      testCase "Simple Task List" $ makeTokens "- [ ] list1\n-- [x] list2\n - [*] list3" @?= [tList TaskUndone I0, Word "list1", tList TaskDone I1, Word "list2", tList TaskPending I0, Word "list3", End],
+      testCase "Wrong task list" $ makeTokens "-[ ]" @?= [Word "-", Word "[ ", Word "]", End],
+      testCase "Insertion" $ makeTokens "= ToC" @?= [DetachedToken TInsertion, Word "ToC", End],
+      testCase "Insertion with text afterwards" $ makeTokens "= ToC\nsome text" @?= [DetachedToken TInsertion, Word "ToC", Break, Word "some ", Word "text", End],
+      testCase "Definition" $ makeTokens "= object" @?= [DetachedToken TInsertion, Word "object", End],
+      testCase "Definition with text afterwards" $ makeTokens ": object\nsome text" @?= [DefinitionToken TSingleDefinition, Word "object", Break, Word "some ", Word "text", End],
+      testCase "Marker" $ makeTokens "| Marker" @?= [DetachedToken TMarker, Word "Marker", End],
+      testCase "Marker with text afterwards" $ makeTokens "| marker\nsome text" @?= [DetachedToken TMarker, Word "marker", Break, Word "some ", Word "text", End]
     ]
+
+delimitingTokens :: TestTree
+delimitingTokens =
+  testGroup
+    "Delimiting tokens"
+    [ testCase "Strong delimiter with file end" $ makeTokens "===" @?= [DelimitingToken TStrongDelimiter, End],
+      testCase "Strong delimiter with new line" $ makeTokens "======== \n" @?= [DelimitingToken TStrongDelimiter, End],
+      testCase "Wrong strong delimiter" $ makeTokens "=== s\n" @?= [Word "=", Word "=", Word "= ", Word "s", End],
+      testCase "Weak delimiter with EOF" $ makeTokens "---" @?= [DelimitingToken TWeakDelimiter, End],
+      testCase "Weak delimiter with new line" $ makeTokens "----------- \n" @?= [DelimitingToken TWeakDelimiter, End],
+      testCase "Wrong weak delimiter" $ makeTokens "--- s\n" @?= [DetachedToken (TUnorderedList I2), Word "s", End]
+    ]
+
+trailingModifier :: TestTree
+trailingModifier =
+  testGroup "TrailingModifier" [
+    testCase "List with trailing modifier" $ makeTokens "- list ~\n - not a list" @?= [DetachedToken (TUnorderedList I0), Word "list ", Word "- ", Word "not ", Word "a ", Word "list", End]
+  ]
 
 bold oc = AttachedToken (AttachedT oc TBold)
 

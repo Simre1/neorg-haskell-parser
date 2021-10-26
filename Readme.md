@@ -39,10 +39,10 @@ The Tokenizer is implemented in Neorg.Token
     - Unordered list :heavy_check_mark:
     - Ordered list :heavy_check_mark:
     - TODO lists :heavy_check_mark:
-  - Quote :x:
-  - Marker :x:
-  - Insertions :x:
-  - Definitions :x:
+  - Quote :heavy_multiplication_x: 
+  - Marker :heavy_multiplication_x: 
+  - Insertions :heavy_multiplication_x:
+  - Definitions :heavy_multiplication_x:
 - Tags :x:
   - Carryover tags :x:
   - @document.meta :x:
@@ -56,7 +56,7 @@ The Tokenizer is implemented in Neorg.Token
   - @code :x:
   - @math :x:
   - Custom :x:
-- Trailing modifier :x:
+- Trailing modifier :white_check_mark:
 - Escaping :x:
 - Horizontal line :x:
 
