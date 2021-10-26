@@ -110,7 +110,7 @@ openingAttachedTokens c =
         _ -> fail "No attached tokens matched"
    in token <&> yieldToken (makeScanner $ \c -> openingAttachedTokens c <|> word c)
   where
-    scanAttachedToken = P.try $ anyChar >> followedBy (P.satisfy (\c -> isLetter c || isDigit c) $> () <|> attachedModifier)
+    scanAttachedToken = P.try $ anyChar >> followedBy (P.satisfy (\c -> isLetter c || isDigit c) $> () <|> (P.notFollowedBy (P.char c) >> attachedModifier))
     mkToken = AttachedToken . AttachedT Open
 
 closingAttachedTokens :: Char -> Scanner (NextToken tags)
@@ -129,7 +129,7 @@ closingAttachedTokens c =
         _ -> fail "No closing attached tokens"
    in token <&> yieldToken (makeScanner $ \c -> closingAttachedTokens c)
   where
-    scanAttachedToken = P.try $ anyChar >> followedBy (singleSpace <|> attachedModifier <|> punctuation <|> P.eof <|> P.newline $> ())
+    scanAttachedToken = P.try $ anyChar >> followedBy (singleSpace <|> attachedModifier <|> punctuation <|> P.eof <|> newline c $> ())
     mkToken = AttachedToken . AttachedT Closed
 
 -- TODO: Optimise!
@@ -141,8 +141,7 @@ word c = normalWord <|> controlTokenAsWord c
       yieldToken (P.hspace >> makeScanner inline) <$> (Word <$> (P.char ' ' $> text <> " "))
         <|> pure (yieldToken (makeScanner $ \c -> closingAttachedTokens c <|> (P.hspace >> makeScanner inline)) $ Word text)
     controlTokenAsWord c
-      | c `elem` ("?!:;,.<>()[]{}'\"/#%&$£€" :: String) = anyChar >>= (\c -> P.char ' ' $> pack [c] <> " " <|> pure (pack [c])) <&> yieldToken (P.hspace >> makeScanner inline) . Word
-      | c `elem` ("-*=^`_|" :: String) = anyChar <&> yieldToken (makeScanner word) . Word . pack . (: [])
+      | c `elem` ("?!:;,.<>()[]{}'\"/#%&$£€-*=^`_|" :: String) = anyChar >>= (\c -> P.char ' ' $> pack [c] <> " " <|> pure (pack [c])) <&> yieldToken (P.hspace >> makeScanner inline) . Word
       | otherwise = fail "No control token"
 
 atLineStart :: Scanner (NextToken tags)
@@ -157,23 +156,49 @@ atLineStart =
 -- afterWord :: Scanner (NextToken tags)
 -- afterWord = makeScanner $ \c -> closingAttachedTokens c <|> makeScanner (\c -> P.hspace >> (openingAttachedTokens c <|> word))
 --
-newline :: Scanner (NextToken tags)
-newline = do
-  P.newline
-  P.try
-    ( P.hspace >> P.newline $> yieldToken atLineStart Break
-        >-> many (P.try $ P.hspace >> P.newline)
-    )
-    <|> atLineStart
+newline :: Char -> Scanner (NextToken tags)
+newline c = do
+  case c of
+    '~' -> (P.try (anyChar >> P.hspace >> P.newline) >> P.hspace >> makeScanner inline) <|> word c
+    '\r' -> scanNewline
+    '\n' -> scanNewline
+    _ -> fail "No newline"
+  where
+    scanNewline = do
+      P.newline
+      P.try
+        ( P.hspace >> P.newline $> yieldToken atLineStart Break
+            >-> many (P.try $ P.hspace >> P.newline)
+        )
+        <|> atLineStart
 
 inline :: Char -> Scanner (NextToken tags)
-inline c = openingAttachedTokens c <|> newline <|> word c
+inline c = openingAttachedTokens c <|> newline c <|> word c
+
+singleLine :: Char -> Scanner (NextToken tags)
+singleLine c = openingAttachedTokens c <|> breakOnNewline c <|> word c
+  where
+    breakOnNewline c = case c of
+      '\n' -> P.newline $> yieldToken atLineStart Break
+      '\r' -> P.newline $> yieldToken atLineStart Break
+      '~' -> (P.try (anyChar >> P.hspace >> P.newline) >> P.hspace >> makeScanner inline) <|> word c
+      _ -> fail "No newline"
 
 lineStartTokens :: Char -> Scanner (NextToken tags)
 lineStartTokens c = P.try $ case c of
   '*' -> repeatingLevel '*' >-> singleSpace <&> yieldToken (P.hspace >> makeScanner inline) . DetachedToken . THeading
-  '-' ->
-    repeatingLevel '-' >-> singleSpace >>= \level ->
+  '-' -> weakDelimiter <|> list
+  '~' -> repeatingLevel '~' >-> singleSpace <&> yieldToken (P.hspace >> makeScanner inline) . DetachedToken . TOrderedList
+  '|' -> anyChar >> singleSpace $> yieldToken (P.hspace >> makeScanner inline) (DetachedToken TMarker)
+  '>' -> repeatingLevel '>' >-> singleSpace <&> yieldToken (P.hspace >> makeScanner singleLine) . DetachedToken . TQuote
+  ':' -> anyChar >> singleSpace $> yieldToken (P.hspace >> makeScanner singleLine) (DefinitionToken TSingleDefinition)
+  '=' -> repeating '=' >>= \case
+    1 -> singleSpace $> yieldToken (P.hspace >> makeScanner singleLine) (DetachedToken TInsertion)
+    2 -> fail "== is not a line start token"
+    _ -> P.hspace >> (P.newline $> () <|> P.eof) $> yieldToken (P.hspace >> atLineStart) (DelimitingToken TStrongDelimiter)
+  _ -> fail "No line start tokens"
+  where 
+    list = P.try $ repeatingLevel '-' >-> singleSpace >>= \level ->
       yieldToken (P.hspace >> makeScanner inline) . DetachedToken
         <$> P.choice
           [ P.string "[ ]" $> TTaskList TaskUndone level,
@@ -181,7 +206,10 @@ lineStartTokens c = P.try $ case c of
             P.string "[x]" $> TTaskList TaskDone level,
             pure (TUnorderedList level)
           ]
-  _ -> fail "No line start tokens"
+    weakDelimiter = P.try $ repeating '-' >>= \case
+      1 -> fail "Not a delimiter"
+      2 -> fail "Not a delimiter"
+      _ -> P.try (P.hspace >> (P.newline $> () <|> P.eof)) $> yieldToken (P.hspace >> atLineStart) (DelimitingToken TWeakDelimiter)
 
 singleWhitespace :: Scanner ()
 singleWhitespace = P.satisfy (< ' ') $> ()
@@ -226,6 +254,9 @@ singleSpace = P.char ' ' $> ()
 
 repeatingLevel :: Char -> Scanner IndentationLevel
 repeatingLevel char = P.try $ P.takeWhile1P (Just $ "repeating " ++ [char]) (== char) <&> toEnum . pred . T.length
+
+repeating :: Char -> Scanner Int
+repeating char = P.try $ P.takeWhile1P (Just $ "repeating " ++ [char]) (== char) <&> T.length
 
 (>->) :: Monad m => m a -> m b -> m a
 (>->) ma mb = ma >>= (\a -> mb >> pure a)
