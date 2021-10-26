@@ -9,7 +9,12 @@ You will need ghc and cabal. Then you can build the project with:
 cabal build
 ```
 
-For quicker development, I have set up a bash script in `testing/ghcid.sh` which tries to parse `testing/test.norg` on every file change. It relies on the tool `ghcid`. 
+You can run the tests with:
+```bash
+cabal test
+```
+
+<!-- For quicker development, I have set up a bash script in `testing/ghcid.sh` which tries to parse `testing/test.norg` on every file change. It relies on the tool `ghcid`.  -->
 
 ## Implementation status
 
@@ -18,27 +23,29 @@ For quicker development, I have set up a bash script in `testing/ghcid.sh` which
 #### Legend
 
 - Implemented and tested: :heavy_check_mark:
-- Implemented and not tested: :white_check_mark: 
+- Almost complete: :white_check_mark: 
 - Partly implemented: :heavy_multiplication_x:
 - Not implemented: :x:
 
-#### Implemented features
+#### Tokenizer
 
-- Attached Modifiers :heavy_multiplication_x:
+The Tokenizer is implemented in Neorg.Token
+
+- Attached Modifiers :white_check_mark:
 - Intersecting modifier :x:
 - Detached Modifiers :heavy_multiplication_x:
-  - Heading :white_check_mark:
-  - List :heavy_multiplication_x:
-    - Unordered list :white_check_mark:
-    - Ordered list :white_check_mark:
-    - TODO lists :x:
-  - Quote :heavy_multiplication_x:
+  - Heading :heavy_check_mark:
+  - List :heavy_check_mark:
+    - Unordered list :heavy_check_mark:
+    - Ordered list :heavy_check_mark:
+    - TODO lists :heavy_check_mark:
+  - Quote :x:
   - Marker :x:
   - Insertions :x:
   - Definitions :x:
-- Tags :heavy_multiplication_x:
+- Tags :x:
   - Carryover tags :x:
-  - @document.meta :white_check_mark:
+  - @document.meta :x:
   - @comment :x:
   - @ToC :x:
   - @ordered :x:
@@ -52,6 +59,10 @@ For quicker development, I have set up a bash script in `testing/ghcid.sh` which
 - Trailing modifier :x:
 - Escaping :x:
 - Horizontal line :x:
+
+#### Parser
+
+Not yet started
 
 ### Transformation to Pandoc AST
 

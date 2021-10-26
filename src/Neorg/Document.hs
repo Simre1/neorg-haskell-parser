@@ -25,7 +25,22 @@ data DocumentMeta = DocumentMeta
 
 emptyDocumentMeta = DocumentMeta Nothing Nothing Nothing V.empty Nothing Nothing
 
-data IndentationLevel = I0 | I1 | I2 | I3 | I4 | I5 deriving (Eq, Ord, Enum, Bounded, Show)
+data IndentationLevel = I0 | I1 | I2 | I3 | I4 | I5 deriving (Eq, Ord, Bounded, Show)
+
+instance Enum IndentationLevel where
+  toEnum 0 = I0
+  toEnum 1 = I1
+  toEnum 2 = I2
+  toEnum 3 = I3
+  toEnum 4 = I4
+  toEnum 5 = I5
+  toEnum x = if x < 0 then I0 else I5
+  fromEnum I0 = 0
+  fromEnum I1 = 1
+  fromEnum I2 = 2
+  fromEnum I3 = 3
+  fromEnum I4 = 4
+  fromEnum I5 = 5
 
 indentationLevelToInt :: IndentationLevel -> Int
 indentationLevelToInt = fromEnum
@@ -56,7 +71,7 @@ data ListBlock where
   ListParagraph :: Inline -> ListBlock
   SubList :: List order -> ListBlock
 
-data Quote = QuoteCons { quoteLevel :: IndentationLevel, quoteContent :: Blocks}
+data Quote = QuoteCons {quoteLevel :: IndentationLevel, quoteContent :: Blocks}
 
 listBlockToBlock :: ListBlock -> Block
 listBlockToBlock (ListParagraph p) = Paragraph p
@@ -91,16 +106,17 @@ renderDocument = toStrict . toLazyText . renderDocument
       Paragraph inline -> renderInline inline <> newline
       Heading heading -> renderHeading heading
       List list -> renderList list
-      Quote quote -> renderQuote quote 
+      Quote quote -> renderQuote quote
     renderMeta :: DocumentMeta -> Builder
     renderMeta (DocumentMeta title description author categories created version) =
       "@document.meta" <> newline
         <> maybe mempty ((<> newline) . ("  title: " <>) . fromText) title
         <> maybe mempty ((<> newline) . ("  description: " <>) . fromText) description
-        <> maybe mempty ((<> newline) . ("  author: " <>) . fromText) author        <> 
-        (if V.length categories > 0 
-          then "  categories: " <> (fromText . T.unwords . V.toList) categories <> newline
-          else mempty)
+        <> maybe mempty ((<> newline) . ("  author: " <>) . fromText) author
+        <> ( if V.length categories > 0
+               then "  categories: " <> (fromText . T.unwords . V.toList) categories <> newline
+               else mempty
+           )
         <> maybe mempty ((<> newline) . ("  created: " <>) . fromString . showGregorian) created
         <> maybe mempty ((<> newline) . ("  version: " <>) . fromText) version
         <> "@end"
