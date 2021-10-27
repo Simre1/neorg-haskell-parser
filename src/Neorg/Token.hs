@@ -6,8 +6,11 @@ module Neorg.Token where
 import Control.Applicative
 import Control.Monad (forM_, guard)
 import Control.Monad.ST
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.State
 import Data.Char (isDigit, isLetter)
 import Data.Functor
+import Data.Functor.Identity
 import Data.STRef
 import Data.Text
 import qualified Data.Text as T
@@ -74,14 +77,19 @@ data Token (tags :: [*])
 
 type TokenConsumer t = Consumer (Token t)
 
-type Scanner = P.Parsec Void Text
+data ScannerState = ScannerState
+  { stateInSingleParagraph :: Bool,
+    stateInSubscript :: Bool
+  }
+
+type Scanner = P.ParsecT Void Text (StateT ScannerState Identity)
 
 anyChar = P.satisfy (const True)
 
 listTokens :: TokenConsumer tags [Token tags]
 listTokens = ($ []) <$> go id
   where
-    go f =
+    go !f =
       Next $ \case
         End -> Done (f . (End :))
         t -> go (f . (t :))
@@ -95,72 +103,58 @@ makeScanner :: (Char -> Scanner (NextToken tags)) -> Scanner (NextToken tags)
 makeScanner scanner = (P.eof $> (NextToken End (fail "File end reached"))) <|> (P.lookAhead anyChar >>= scanner)
 
 openingAttachedTokens :: Char -> Scanner (NextToken tags)
-openingAttachedTokens = makeOpeningAttachedTokens . makeScanner $ \c -> openingAttachedTokens c <|> word c
-
-openingAttachedTokensSingleLine :: Char -> Scanner (NextToken tags)
-openingAttachedTokensSingleLine = makeOpeningAttachedTokens . makeScanner $ \c -> openingAttachedTokensSingleLine c <|> wordSingleLine c
-
-makeOpeningAttachedTokens :: Scanner (NextToken tags) -> Char -> Scanner (NextToken tags)
-makeOpeningAttachedTokens nextScanner c =
+openingAttachedTokens c =
   let token = case c of
         '*' -> scanAttachedToken $> mkToken TBold
         '/' -> scanAttachedToken $> mkToken TItalic
         '_' -> scanAttachedToken $> mkToken TUnderline
         '-' -> scanAttachedToken $> mkToken TStrikethrough
         '^' -> scanAttachedToken $> mkToken TSuperscript
-        -- ',' -> scanAttachedToken $> mkToken TSubscript
+        ',' -> scanAttachedToken >> lift (modify $ \s -> s {stateInSubscript = True}) $> mkToken TSubscript
         '|' -> scanAttachedToken $> mkToken TSpoiler
         '`' -> scanAttachedToken $> mkToken TVerbatim
         '$' -> scanAttachedToken $> mkToken TMath
         '=' -> scanAttachedToken $> mkToken TVariable
         _ -> fail "No attached tokens matched"
-   in token <&> yieldToken nextScanner
+   in token <&> yieldToken (makeScanner $ \c -> openingAttachedTokens c <|> word c)
   where
     scanAttachedToken = P.try $ anyChar >> followedBy (P.satisfy (\c -> isLetter c || isDigit c) $> () <|> (P.notFollowedBy (P.char c) >> attachedModifier))
     mkToken = AttachedToken . AttachedT Open
 
-makeClosingAttachedTokens :: Scanner (NextToken tags) -> Char -> Scanner (NextToken tags)
-makeClosingAttachedTokens nextScanner c =
+closingAttachedTokens :: Char -> Scanner (NextToken tags)
+closingAttachedTokens c =
   let token = case c of
         '*' -> scanAttachedToken $> mkToken TBold
         '/' -> scanAttachedToken $> mkToken TItalic
         '_' -> scanAttachedToken $> mkToken TUnderline
         '-' -> scanAttachedToken $> mkToken TStrikethrough
         '^' -> scanAttachedToken $> mkToken TSuperscript
-        -- ',' -> scanAttachedToken $> mkToken TSubscript
+        ',' ->
+          lift (gets stateInSubscript) >>= guard
+            >> scanAttachedToken
+            >> lift (modify $ \s -> s {stateInSubscript = True})
+            $> mkToken TSubscript
         '|' -> scanAttachedToken $> mkToken TSpoiler
         '`' -> scanAttachedToken $> mkToken TVerbatim
         '$' -> scanAttachedToken $> mkToken TMath
         '=' -> scanAttachedToken $> mkToken TVariable
         _ -> fail "No closing attached tokens"
-   in token <&> yieldToken nextScanner
+   in token <&> yieldToken (makeScanner $ \c -> closingAttachedTokens c <|> (P.hspace >> inline c))
   where
     scanAttachedToken = P.try $ anyChar >> followedBy (singleSpace <|> attachedModifier <|> punctuation <|> P.eof <|> newline c $> ())
     mkToken = AttachedToken . AttachedT Closed
 
-closingAttachedTokens :: Char -> Scanner (NextToken tags)
-closingAttachedTokens = makeClosingAttachedTokens (makeScanner $ \c -> closingAttachedTokens c <|> (P.hspace >> inline c))
-
-closingAttachedTokensSingleLine :: Char -> Scanner (NextToken tags)
-closingAttachedTokensSingleLine = makeClosingAttachedTokens (makeScanner $ \c -> closingAttachedTokensSingleLine c <|> (P.hspace >> singleLine c))
-
 -- TODO: Optimise
-makeWord :: Scanner (NextToken tags) -> Char -> Scanner (NextToken tags)
-makeWord nextScanner c = normalWord <|> controlTokenAsWord c
+word :: Char -> Scanner (NextToken tags)
+word c = normalWord <|> controlTokenAsWord c
   where
     normalWord = do
       text <- P.takeWhile1P (Just "Word") (\c -> c > ' ' && c `notElem` ("?!:;,.<>()[]{}'\"/#%&$£€-*=^`_|" :: String))
       yieldToken (P.hspace >> makeScanner inline) <$> (Word <$> (P.char ' ' $> text <> " "))
-        <|> pure (yieldToken nextScanner $ Word text)
+        <|> pure (yieldToken (makeScanner $ \c -> closingAttachedTokens c <|> (P.hspace >> makeScanner inline)) $ Word text)
     controlTokenAsWord c
       | c `elem` ("?!:;,.<>()[]{}'\"/#%&$£€-*=^`_|" :: String) = anyChar >>= (\c -> P.char ' ' $> pack [c] <> " " <|> pure (pack [c])) <&> yieldToken (P.hspace >> makeScanner inline) . Word
       | otherwise = fail "No control token"
-
-word :: Char -> Scanner (NextToken tags)
-word = makeWord $ makeScanner $ \c -> closingAttachedTokens c <|> (P.hspace >> makeScanner inline)
-
-wordSingleLine :: Char -> Scanner (NextToken tags)
-wordSingleLine = makeWord $ makeScanner $ \c -> closingAttachedTokensSingleLine c <|> (P.hspace >> makeScanner singleLine)
 
 atLineStart :: Scanner (NextToken tags)
 atLineStart =
@@ -170,18 +164,14 @@ atLineStart =
           lineStartTokens c <|> openingAttachedTokens c <|> word c
       )
 
---
--- afterWord :: Scanner (NextToken tags)
--- afterWord = makeScanner $ \c -> closingAttachedTokens c <|> makeScanner (\c -> P.hspace >> (openingAttachedTokens c <|> word))
---
 newline :: Char -> Scanner (NextToken tags)
 newline c = do
-  case c of
-    '~' -> (P.try (anyChar >> P.hspace >> P.newline) >> P.hspace >> makeScanner inline) <|> word c
-    '\r' -> scanNewline
-    '\n' -> scanNewline
-    _ -> fail "No newline"
+  inSingleParagraph <- lift $ gets stateInSingleParagraph
+  if inSingleParagraph
+    then newlineSingleParagraph
+    else normalNewline
   where
+    scanNewline :: Scanner (NextToken tags)
     scanNewline = do
       P.newline
       P.try
@@ -189,19 +179,24 @@ newline c = do
             >-> many (P.try $ P.hspace >> P.newline)
         )
         <|> atLineStart
+    newlineSingleParagraph :: Scanner (NextToken tags)
+    newlineSingleParagraph = case c of
+      '\n' -> P.newline >> lift (modify $ \s -> s {stateInSingleParagraph = False}) $> yieldToken atLineStart Break
+      '\r' -> P.newline >> lift (modify $ \s -> s {stateInSingleParagraph = False}) $> yieldToken atLineStart Break
+      '~' -> (P.try (anyChar >> P.hspace >> P.newline) >> P.hspace >> makeScanner inline) <|> word c
+      _ -> fail "No newline"
+    normalNewline :: Scanner (NextToken tags)
+    normalNewline = case c of
+      '~' -> (P.try (anyChar >> P.hspace >> P.newline) >> P.hspace >> makeScanner inline) <|> word c
+      '\r' -> scanNewline
+      '\n' -> scanNewline
+      _ -> fail "No newline"
 
 inline :: Char -> Scanner (NextToken tags)
 inline c = openingAttachedTokens c <|> newline c <|> word c
 
 singleLine :: forall tags. Char -> Scanner (NextToken tags)
-singleLine c = openingAttachedTokensSingleLine c <|> breakOnNewline c <|> wordSingleLine c
-  where
-    breakOnNewline :: Char -> Scanner (NextToken tags)
-    breakOnNewline c = case c of
-      '\n' -> P.newline $> yieldToken atLineStart Break
-      '\r' -> P.newline $> yieldToken atLineStart Break
-      '~' -> (P.try (anyChar >> P.hspace >> P.newline) >> P.hspace >> makeScanner inline) <|> word c
-      _ -> fail "No newline"
+singleLine c = lift (modify $ \s -> s {stateInSingleParagraph = True}) >> inline c
 
 lineStartTokens :: Char -> Scanner (NextToken tags)
 lineStartTokens c = P.try $ case c of
@@ -216,6 +211,11 @@ lineStartTokens c = P.try $ case c of
       1 -> singleSpace $> yieldToken (P.hspace >> makeScanner singleLine) (DetachedToken TInsertion)
       2 -> fail "== is not a line start token"
       _ -> P.hspace >> (P.newline $> () <|> P.eof) $> yieldToken (P.hspace >> atLineStart) (DelimitingToken TStrongDelimiter)
+  '_' ->
+    repeating '_' >>= \case
+      1 -> fail "_ is not a line start token"
+      2 -> fail "__ is not a line start token"
+      _ -> P.hspace >> (P.newline $> () <|> P.eof) $> yieldToken (P.hspace >> atLineStart) (DelimitingToken THorizontalDelimiter)
   _ -> fail "No line start tokens"
   where
     list =
@@ -249,13 +249,15 @@ attachedModifier :: Scanner ()
 attachedModifier = P.oneOf ("-*=^`_|,/" :: String) $> ()
 
 asTokens :: Text -> TokenConsumer tags a -> a
-asTokens input consumer = go consumer (initialState "test" input) atLineStart
+asTokens input consumer = go consumer (initialState "test" input) initialScannerState atLineStart
   where
-    go consumer parserState next = case consumer of
+    initialScannerState = ScannerState False False
+    go :: TokenConsumer tags a -> P.State Text Void -> ScannerState -> Scanner (NextToken tags) -> a
+    go consumer parserState scannerState next = case consumer of
       Done a -> a
-      Next f -> case P.runParser' next parserState of
-        (_, Left err) -> error $ errorBundlePretty err
-        (state, Right (NextToken token newNext)) -> go (f token) state newNext
+      (Next f) -> case flip runStateT scannerState $ P.runParserT' next parserState of
+        Identity ((_, Left err), nextScannerState) -> error $ errorBundlePretty err
+        Identity ((nextParserState, Right (NextToken token newNext)), nextScannerState) -> go (f token) nextParserState nextScannerState newNext
 
 initialState :: String -> s -> P.State s e
 initialState name s =
