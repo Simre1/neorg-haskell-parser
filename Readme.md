@@ -31,9 +31,9 @@ cabal test
 
 The Tokenizer is implemented in Neorg.Token
 
-- Attached Modifiers :white_check_mark:
+- Attached Modifiers :heavy_check_mark:
 - Intersecting modifier :x:
-- Detached Modifiers :heavy_multiplication_x:
+- Detached Modifiers :heavy_check_mark:
   - Heading :heavy_check_mark:
   - List :heavy_check_mark:
     - Unordered list :heavy_check_mark:
@@ -56,9 +56,9 @@ The Tokenizer is implemented in Neorg.Token
   - @code :x:
   - @math :x:
   - Custom :x:
-- Trailing modifier :white_check_mark:
+- Trailing modifier :heavy_check_mark:
 - Escaping :x:
-- Horizontal line :x:
+- Horizontal line :heavy_check_mark:
 
 #### Parser
 

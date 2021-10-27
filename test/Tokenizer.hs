@@ -33,6 +33,7 @@ attachedTokenTests =
       testCase "Strikethrough word" $ makeTokens "-strikethrough-" @?= [strikethrough Open, Word "strikethrough", strikethrough Closed, End],
       testCase "Superscript word" $ makeTokens "^superscript^" @?= [superscript Open, Word "superscript", superscript Closed, End],
       testCase "Subscript word" $ makeTokens ",subscript," @?= [subscript Open, Word "subscript", subscript Closed, End],
+      testCase "Normal comma" $ makeTokens "normal, comma" @?= [Word "normal", Word ", ", Word "comma", End],
       testCase "Spoiler word" $ makeTokens "|spoiler|" @?= [spoiler Open, Word "spoiler", spoiler Closed, End],
       testCase "Verbatim word" $ makeTokens "`verbatim`" @?= [verbatim Open, Word "verbatim", verbatim Closed, End],
       testCase "Math word" $ makeTokens "$math$" @?= [math Open, Word "math", math Closed, End],
@@ -88,7 +89,9 @@ detachedTokenTests =
       testCase "Definition" $ makeTokens "= object" @?= [DetachedToken TInsertion, Word "object", End],
       testCase "Definition with text afterwards" $ makeTokens ": object\nsome text" @?= [DefinitionToken TSingleDefinition, Word "object", Break, Word "some ", Word "text", End],
       testCase "Marker" $ makeTokens "| Marker" @?= [DetachedToken TMarker, Word "Marker", End],
-      testCase "Marker with text afterwards" $ makeTokens "| marker\nsome text" @?= [DetachedToken TMarker, Word "marker", Break, Word "some ", Word "text", End]
+      testCase "Marker with text afterwards" $ makeTokens "| marker\nsome text" @?= [DetachedToken TMarker, Word "marker", Break, Word "some ", Word "text", End],
+      testCase "Horizonal line" $ makeTokens "___ " @?= [DelimitingToken THorizontalDelimiter, End],
+      testCase "Horizonal line with text afterwards" $ makeTokens "______ \nsome text" @?= [DelimitingToken THorizontalDelimiter, Word "some ", Word "text", End]
     ]
 
 delimitingTokens :: TestTree
