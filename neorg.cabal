@@ -48,7 +48,7 @@ library
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.14.2.0, text, vector, containers, deepseq, bytestring, megaparsec, time, scanner
+    build-depends:    base ^>=4.14.2.0, text, vector, containers, deepseq, bytestring, megaparsec, time, scanner, transformers
     hs-source-dirs:   src
     default-language: Haskell2010
 
