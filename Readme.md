@@ -57,7 +57,7 @@ The Tokenizer is implemented in Neorg.Token
   - @math :x:
   - Custom :x:
 - Trailing modifier :heavy_check_mark:
-- Escaping :x:
+- Escaping :heavy_check_mark:
 - Horizontal line :heavy_check_mark:
 - Links :x:
 
