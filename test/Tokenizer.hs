@@ -18,7 +18,8 @@ tokenizerTests =
       detachedTokenTests,
       breaks,
       delimitingTokens,
-      trailingModifier
+      trailingModifier,
+      escapingCharacters
     ]
 
 attachedTokenTests :: TestTree
@@ -108,9 +109,20 @@ delimitingTokens =
 
 trailingModifier :: TestTree
 trailingModifier =
-  testGroup "TrailingModifier" [
-    testCase "List with trailing modifier" $ makeTokens "- list ~\n - not a list" @?= [DetachedToken (TUnorderedList I0), Word "list ", Word "- ", Word "not ", Word "a ", Word "list", End]
-  ]
+  testGroup
+    "TrailingModifier"
+    [ testCase "List with trailing modifier" $ makeTokens "- list ~\n - not a list" @?= [DetachedToken (TUnorderedList I0), Word "list ", Word "- ", Word "not ", Word "a ", Word "list", End]
+    ]
+
+escapingCharacters :: TestTree
+escapingCharacters =
+  testGroup
+    "Escaping characters"
+    [ testCase "Escaping *" $ makeTokens "\\*not bold\\*" @?= [Word "*", Word "not ", Word "bold", Word "*", End],
+      testCase "Escaping list token" $ makeTokens "\\- not list" @?= [Word "- ", Word "not ", Word "list", End],
+      testCase "Not an escape" $ makeTokens "some\\ text" @?= [Word "some", Word "\\ ", Word "text", End],
+      testCase "Escaping a delimiter" $ makeTokens "\\===" @?= [Word "=", Word "=", Word "=", End]
+    ]
 
 bold oc = AttachedToken (AttachedT oc TBold)
 
