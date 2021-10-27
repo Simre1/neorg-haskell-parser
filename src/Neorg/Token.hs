@@ -100,7 +100,7 @@ yieldToken :: Scanner (NextToken tags) -> Token tags -> NextToken tags
 yieldToken = flip NextToken
 
 makeScanner :: (Char -> Scanner (NextToken tags)) -> Scanner (NextToken tags)
-makeScanner scanner = (P.eof $> (NextToken End (fail "File end reached"))) <|> (P.lookAhead anyChar >>= scanner)
+makeScanner scanner = (P.eof $> NextToken End (fail "File end reached")) <|> (P.lookAhead anyChar >>= scanner)
 
 openingAttachedTokens :: Char -> Scanner (NextToken tags)
 openingAttachedTokens c =
@@ -144,16 +144,38 @@ closingAttachedTokens c =
     scanAttachedToken = P.try $ anyChar >> followedBy (singleSpace <|> attachedModifier <|> punctuation <|> P.eof <|> newline c $> ())
     mkToken = AttachedToken . AttachedT Closed
 
+escapedChar :: Char -> Scanner (NextToken tags)
+escapedChar = 
+  P.try . \case
+    '\\' -> do
+      anyChar
+      c <- P.lookAhead anyChar
+      token <- case c of
+        '*' -> fmap Word $ anyChar >> withSpace (pack [c])
+        '-' -> fmap Word $ anyChar >> withSpace (pack [c])
+        '_' -> fmap Word $ anyChar >> withSpace (pack [c])
+        '/' -> fmap Word $ anyChar >> withSpace (pack [c])
+        ',' -> fmap Word $ anyChar >> withSpace (pack [c])
+        '^' -> fmap Word $ anyChar >> withSpace (pack [c])
+        '|' -> fmap Word $ anyChar >> withSpace (pack [c])
+        '`' -> fmap Word $ anyChar >> withSpace (pack [c])
+        '=' -> fmap Word $ anyChar >> withSpace (pack [c])
+        _ -> fail "No escaped char"
+      pure $ yieldToken (makeScanner inline) token
+    _ -> fail "No backslash"
+  where
+    withSpace t = P.char ' ' $> (t <> " ") <|> pure t
+-- 
 -- TODO: Optimise
 word :: Char -> Scanner (NextToken tags)
 word c = normalWord <|> controlTokenAsWord c
   where
     normalWord = do
-      text <- P.takeWhile1P (Just "Word") (\c -> c > ' ' && c `notElem` ("?!:;,.<>()[]{}'\"/#%&$£€-*=^`_|" :: String))
+      text <- P.takeWhile1P (Just "Word") (\c -> c > ' ' && c `notElem` ("?!:;,.<>()[]{}'\"\\/#%&$£€-*=^`_|" :: String))
       yieldToken (P.hspace >> makeScanner inline) <$> (Word <$> (P.char ' ' $> text <> " "))
         <|> pure (yieldToken (makeScanner $ \c -> closingAttachedTokens c <|> (P.hspace >> makeScanner inline)) $ Word text)
     controlTokenAsWord c
-      | c `elem` ("?!:;,.<>()[]{}'\"/#%&$£€-*=^`_|" :: String) = anyChar >>= (\c -> P.char ' ' $> pack [c] <> " " <|> pure (pack [c])) <&> yieldToken (P.hspace >> makeScanner inline) . Word
+      | c `elem` ("?!:;,.<>()[]{}'\"\\/#%&$£€-*=^`_|" :: String) = anyChar >>= (\c -> P.char ' ' $> pack [c] <> " " <|> pure (pack [c])) <&> yieldToken (P.hspace >> makeScanner inline) . Word
       | otherwise = fail "No control token"
 
 atLineStart :: Scanner (NextToken tags)
@@ -161,7 +183,7 @@ atLineStart =
   P.hspace
     >> makeScanner
       ( \c -> do
-          lineStartTokens c <|> openingAttachedTokens c <|> word c
+          lineStartTokens c <|> escapedChar c <|> openingAttachedTokens c <|> word c
       )
 
 newline :: Char -> Scanner (NextToken tags)
@@ -193,7 +215,7 @@ newline c = do
       _ -> fail "No newline"
 
 inline :: Char -> Scanner (NextToken tags)
-inline c = openingAttachedTokens c <|> newline c <|> word c
+inline c = escapedChar c <|> openingAttachedTokens c <|> newline c <|> word c
 
 singleLine :: forall tags. Char -> Scanner (NextToken tags)
 singleLine c = lift (modify $ \s -> s {stateInSingleParagraph = True}) >> inline c

@@ -42,7 +42,7 @@ The Tokenizer is implemented in Neorg.Token
   - Quote :heavy_check_mark: 
   - Marker :heavy_check_mark: 
   - Insertions :heavy_check_mark:
-  - Definitions :heavy_multiplication_x:
+- Definitions :heavy_multiplication_x:
 - Tags :x:
   - Carryover tags :x:
   - @document.meta :x:
@@ -59,6 +59,7 @@ The Tokenizer is implemented in Neorg.Token
 - Trailing modifier :heavy_check_mark:
 - Escaping :x:
 - Horizontal line :heavy_check_mark:
+- Links :x:
 
 #### Parser
 
