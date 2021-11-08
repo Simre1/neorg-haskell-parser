@@ -1,27 +1,34 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Neorg.Document where
 
 import Data.Data (Proxy)
 import qualified Data.Map as M
+import Data.Text (pack)
 import Data.Text as T (Text, unwords)
 import Data.Text.Lazy (toStrict)
 import Data.Text.Lazy.Builder
 import Data.Time.Calendar (Day, showGregorian)
 import qualified Data.Vector as V
 import Debug.Trace
+import Optics.Core
+import Optics.TH
 
 data Document = Document
-  { documentBlocks :: Blocks,
-    documentMeta :: DocumentMeta
+  { _documentBlocks :: Blocks,
+    _documentMeta :: DocumentMeta
   }
+  deriving (Show, Eq)
 
 data DocumentMeta = DocumentMeta
-  { documentTitle :: Maybe Text,
-    documentDescription :: Maybe Text,
-    documentAuthor :: Maybe Text,
-    documentCategories :: V.Vector Text,
-    documentCreated :: Maybe Day,
-    documentVersion :: Maybe Text
+  { _documentTitle :: Maybe Text,
+    _documentDescription :: Maybe Text,
+    _documentAuthor :: Maybe Text,
+    _documentCategories :: V.Vector Text,
+    _documentCreated :: Maybe Day,
+    _documentVersion :: Maybe Text
   }
+  deriving (Show, Eq)
 
 emptyDocumentMeta = DocumentMeta Nothing Nothing Nothing V.empty Nothing Nothing
 
@@ -45,43 +52,71 @@ instance Enum IndentationLevel where
 indentationLevelToInt :: IndentationLevel -> Int
 indentationLevelToInt = fromEnum
 
-data Block where
-  Paragraph :: Inline -> Block
-  Heading :: Heading -> Block
-  List :: List order -> Block
-  Quote :: Quote -> Block
+data Block
+  = Paragraph Inline
+  | Heading Heading
+  | Quote Quote
+  | List List
+  | HorizonalLine
+  | Marker Marker
+  deriving (Show, Eq)
 
 -- Tag :: SomeTag tags -> Block
 
 type Blocks = V.Vector Block
 
 data Heading = HeadingCons
-  { headingText :: Inline,
-    headingLevel :: IndentationLevel,
-    headingContent :: Blocks
+  { _headingText :: Inline,
+    _headingLevel :: IndentationLevel,
+    _headingContent :: Blocks
   }
+  deriving (Show, Eq)
 
-data OrderS (order :: Order) where
-  OrderedS :: OrderS 'Ordered
-  UnorderedS :: OrderS 'Unordered
+data ListBlock = ListParagraph Inline | SubList List deriving (Show, Eq)
 
-data Order = Ordered | Unordered
+type ListBlocks = V.Vector ListBlock
 
-data ListBlock where
-  ListParagraph :: Inline -> ListBlock
-  SubList :: List order -> ListBlock
-
-data Quote = QuoteCons {quoteLevel :: IndentationLevel, quoteContent :: Blocks}
-
-listBlockToBlock :: ListBlock -> Block
-listBlockToBlock (ListParagraph p) = Paragraph p
-listBlockToBlock (SubList list) = List list
-
-data List (order :: Order) = ListCons
-  { listLevel :: IndentationLevel,
-    listOrder :: OrderS order,
-    listItems :: V.Vector (V.Vector ListBlock)
+data Quote = QuoteCons
+  { _quoteLevel :: IndentationLevel,
+    _quoteContent :: Inline
   }
+  deriving (Show, Eq)
+
+data Marker = MarkerCons {_markerId :: Text, _markerText :: Text} deriving (Show, Eq)
+
+--
+-- data Definition = DefinitionCons
+--   { _definitionObject :: Text,
+--     _definitionContent ::  ???
+--   }
+--   deriving (Show, Eq)
+
+--
+-- listBlockToBlock :: ListBlock -> Block
+-- listBlockToBlock (ListParagraph p) = Paragraph p
+-- listBlockToBlock (SubList list) = List list
+
+data UnorderedList = UnorderedListCons
+  { _uListLevel :: IndentationLevel,
+    _uListItems :: V.Vector (V.Vector ListBlock)
+  }
+  deriving (Show, Eq)
+
+data OrderedList = OrderedListCons
+  { _oListLevel :: IndentationLevel,
+    _oListItems :: V.Vector (V.Vector ListBlock)
+  }
+  deriving (Show, Eq)
+
+data TaskStatus = TaskDone | TaskPending | TaskUndone deriving (Show, Eq)
+
+data TaskList = TaskListCons
+  { _tListLevel :: IndentationLevel,
+    _tListItems :: V.Vector (TaskStatus, V.Vector ListBlock)
+  }
+  deriving (Show, Eq)
+
+data List = UnorderedList UnorderedList | OrderedList OrderedList | TaskList TaskList deriving (Show, Eq)
 
 data Inline
   = Text Text
@@ -94,60 +129,107 @@ data Inline
   | Spoiler Inline
   | ConcatInline (V.Vector Inline)
   | Link Text Inline
-  deriving (Show)
+  | Space
+  deriving (Show, Eq)
 
-renderDocument :: Document -> Text
-renderDocument = toStrict . toLazyText . renderDocument
+canonalizeInline :: Inline -> Inline
+canonalizeInline = \case
+  ConcatInline inlines ->
+    let vector = processInlines inlines
+     in if V.length vector == 1
+          then V.head vector
+          else ConcatInline vector
+  a -> a
   where
-    renderDocument :: Document -> Builder
-    renderDocument (Document blocks meta) = renderMeta meta <> newline <> V.foldMap (\block -> renderBlock block <> newline) blocks
-    renderBlock :: Block -> Builder
-    renderBlock = \case
-      Paragraph inline -> renderInline inline <> newline
-      Heading heading -> renderHeading heading
-      List list -> renderList list
-      Quote quote -> renderQuote quote
-    renderMeta :: DocumentMeta -> Builder
-    renderMeta (DocumentMeta title description author categories created version) =
-      "@document.meta" <> newline
-        <> maybe mempty ((<> newline) . ("  title: " <>) . fromText) title
-        <> maybe mempty ((<> newline) . ("  description: " <>) . fromText) description
-        <> maybe mempty ((<> newline) . ("  author: " <>) . fromText) author
-        <> ( if V.length categories > 0
-               then "  categories: " <> (fromText . T.unwords . V.toList) categories <> newline
-               else mempty
-           )
-        <> maybe mempty ((<> newline) . ("  created: " <>) . fromString . showGregorian) created
-        <> maybe mempty ((<> newline) . ("  version: " <>) . fromText) version
-        <> "@end"
-        <> newline
-    renderBlocks :: Blocks -> Builder
-    renderBlocks = V.foldMap renderBlock
-    renderQuote :: Quote -> Builder
-    renderQuote (QuoteCons level content) = levelToChars '>' level <> " " <> renderBlocks content
-    renderInline :: Inline -> Builder
-    renderInline = \case
-      Text text -> fromText text
-      ConcatInline inlines -> V.foldMap renderInline inlines
-      Bold inline -> "*" <> renderInline inline <> "*"
-      Italic inline -> "/" <> renderInline inline <> "/"
-    renderHeading :: Heading -> Builder
-    renderHeading (HeadingCons headingText headingLevel headingContent) =
-      levelToChars '*' headingLevel <> "H " <> renderInline headingText <> newline <> renderBlocks headingContent <> "---" <> newline
-    renderList :: List order -> Builder
-    renderList (ListCons listLevel listOrder listItems) =
-      flip V.foldMap listItems $ \blocks ->
-        levelToChars '-' listLevel <> "L " <> renderBlocks (listBlockToBlock <$> blocks)
-    newline :: Builder
-    newline = "\n"
-    levelToChars :: Char -> IndentationLevel -> Builder
-    levelToChars char level = case level of
-      I0 -> singleton char
-      I1 -> fromString $ replicate 2 char
-      I2 -> fromString $ replicate 3 char
-      I3 -> fromString $ replicate 4 char
-      I4 -> fromString $ replicate 5 char
-      I5 -> fromString $ replicate 6 char
+    toVector :: Inline -> V.Vector Inline
+    toVector = \case
+      ConcatInline v -> processInlines v
+      i -> V.singleton i
+    processInlines :: V.Vector Inline -> V.Vector Inline
+    processInlines =
+      V.fromList
+        . V.foldr
+          ( \i b -> case (i, b) of
+              (Text t1, (Text t2) : r) -> Text (t1 <> t2) : r
+              (Text t, r) -> Text t : r
+              (ConcatInline is, r) -> V.toList (processInlines is) <> r
+              (Bold i, r) -> Bold (canonalizeInline i) : r
+              (Italic i, r) -> Italic (canonalizeInline i) : r
+              (Underline i, r) -> Underline (canonalizeInline i) : r
+              (StrikeThrough i, r) -> StrikeThrough (canonalizeInline i) : r
+              (Superscript i, r) -> Superscript (canonalizeInline i) : r
+              (Subscript i, r) -> Subscript (canonalizeInline i) : r
+              (Spoiler i, r) -> Spoiler (canonalizeInline i) : r
+              (Link t i, r) -> Link t (canonalizeInline i) : r
+              (Space, r) -> Space : r
+          )
+          []
+
+-- prettyInline :: Inline -> Text
+-- prettyInline = \case
+--   Text t -> t
+--   Bold i -> pack ['*'] <> prettyInline i <> pack ['*']
+--   Italic i -> pack ['/'] <> prettyInline i <> pack ['/']
+--   Underline i -> pack ['_'] <> prettyInline i <> pack ['_']
+--   StrikeThrough i -> pack ['-'] <> prettyInline i <> pack ['-']
+--   Superscript i -> pack ['^'] <> prettyInline i <> pack ['^']
+--   Subscript i -> pack [','] <> prettyInline i <> pack [',']
+--   Spoiler i -> pack ['|'] <> prettyInline i <> pack ['|']
+--   ConcatInline i -> V.foldMap prettyInline i
+--   Link t i -> undefined
+--
+-- renderDocument :: Document -> Text
+-- renderDocument = toStrict . toLazyText . renderDocument
+--   where
+--     renderDocument :: Document -> Builder
+--     renderDocument (Document blocks meta) = renderMeta meta <> newline <> V.foldMap (\block -> renderBlock block <> newline) blocks
+--     renderBlock :: Block -> Builder
+--     renderBlock = \case
+--       Paragraph inline -> renderInline inline <> newline
+--       Heading heading -> renderHeading heading
+--       -- List list -> renderList list
+--       Quote quote -> renderQuote quote
+--     renderMeta :: DocumentMeta -> Builder
+--     renderMeta (DocumentMeta title description author categories created version) =
+--       "@document.meta" <> newline
+--         <> maybe mempty ((<> newline) . ("  title: " <>) . fromText) title
+--         <> maybe mempty ((<> newline) . ("  description: " <>) . fromText) description
+--         <> maybe mempty ((<> newline) . ("  author: " <>) . fromText) author
+--         <> ( if V.length categories > 0
+--                then "  categories: " <> (fromText . T.unwords . V.toList) categories <> newline
+--                else mempty
+--            )
+--         <> maybe mempty ((<> newline) . ("  created: " <>) . fromString . showGregorian) created
+--         <> maybe mempty ((<> newline) . ("  version: " <>) . fromText) version
+--         <> "@end"
+--         <> newline
+--     renderBlocks :: Blocks -> Builder
+--     renderBlocks = V.foldMap renderBlock
+--     renderQuote :: Quote -> Builder
+--     renderQuote (QuoteCons level content) = levelToChars '>' level <> " " <> renderInline content
+--     renderInline :: Inline -> Builder
+--     renderInline = \case
+--       Text text -> fromText text
+--       ConcatInline inlines -> V.foldMap renderInline inlines
+--       Bold inline -> "*" <> renderInline inline <> "*"
+--       Italic inline -> "/" <> renderInline inline <> "/"
+--     renderHeading :: Heading -> Builder
+--     renderHeading (HeadingCons headingText headingLevel headingContent) =
+--       levelToChars '*' headingLevel <> "H " <> renderInline headingText <> newline <> renderBlocks headingContent <> "---" <> newline
+    -- renderList :: List order -> Builder
+    -- renderList (ListCons listLevel listOrder listItems) =
+    --   flip V.foldMap listItems $ \blocks ->
+    --     levelToChars '-' listLevel <> "L " <> renderBlocks (listBlockToBlock <$> blocks)
+    -- newline :: Builder
+    -- newline = "\n"
+    -- levelToChars :: Char -> IndentationLevel -> Builder
+    -- levelToChars char level = case level of
+    --   I0 -> singleton char
+    --   I1 -> fromString $ replicate 2 char
+    --   I2 -> fromString $ replicate 3 char
+    --   I3 -> fromString $ replicate 4 char
+    --   I4 -> fromString $ replicate 5 char
+    --   I5 -> fromString $ replicate 6 char
 
 -- class Tag a where
 --   tagName :: f a -> T.Text
@@ -187,6 +269,16 @@ renderDocument = toStrict . toLazyText . renderDocument
 -- class MakeTags (tags :: [*]) where
 --   makeTagHandler :: Proxy tags -> TagHandler tags
 --
+
+makeLenses ''Document
+makeLenses ''DocumentMeta
+makeLenses ''Heading
+makeLenses ''Quote
+makeLenses ''Marker
+makeLenses ''UnorderedList
+makeLenses ''OrderedList
+makeLenses ''TaskList
+
 class Tautology
 
 instance Tautology
