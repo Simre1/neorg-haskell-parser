@@ -37,27 +37,34 @@ common common
     PolyKinds,
     TypeOperators,
     OverloadedStrings,
-    RankNTypes
+    RankNTypes,
+    MultiWayIf,
+    TupleSections
+  ghc-options: -O0
+  default-language: Haskell2010
 
 library
     import: common
-    exposed-modules:  Neorg, Neorg.Token, Neorg.Consumer, Neorg.Document
+    exposed-modules:  Neorg, Neorg.Document, Neorg.Parser
 
     -- Modules included in this library but not exported.
     -- other-modules:
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.14.2.0, text, vector, containers, deepseq, bytestring, megaparsec, time, scanner, transformers
+    build-depends:    base ^>=4.14.2.0, text, vector, containers, bytestring, megaparsec, time, transformers, optics-core, optics-th
     hs-source-dirs:   src
-    default-language: Haskell2010
+
+executable neorg-pandoc
+  import: common
+  main-is: Main.hs
+  build-depends: base ^>=4.14.2.0, text, vector, containers, bytestring, aeson, pandoc-types, optics-core, neorg, transformers
+  hs-source-dirs: pandoc
 
 test-suite test
     import: common
     type:       exitcode-stdio-1.0
     main-is:    Main.hs
-    other-modules: Tokenizer
+    other-modules: Parser
     hs-source-dirs: test
-    -- NOTE: no constraints on 'foo-internal' as same-package
-    --       dependencies implicitly refer to the same package instance
-    build-depends: neorg, tasty, tasty-hunit, base, text
+    build-depends: neorg, tasty, tasty-hunit, base, text, megaparsec, transformers, vector, optics-core

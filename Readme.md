@@ -6,43 +6,39 @@ Neorg Haskell Parser aims to be a complete implementation of the [Neorg markup s
 
 You will need ghc and cabal. Then you can build the project with:
 ```bash
-cabal build
+cabal build neorg-pandoc
 ```
 
 You can run the tests with:
 ```bash
-cabal test
+cabal run test
 ```
 
-<!-- For quicker development, I have set up a bash script in `testing/ghcid.sh` which tries to parse `testing/test.norg` on every file change. It relies on the tool `ghcid`.  -->
+## Usage
+
+After having built `neorg-pandoc`, you can use it to transform Neorg files into Pandoc json documents. `neorg-pandoc` expects exactly one parameter, which should be the file path to the Neorg file. If parsing was successful, the json document is printed to stdout.
+
+An example usage might be:
+```bash
+cabal exec neorg-pandoc -- testing/test.norg | pandoc -f json -o testing/out.pdf
+```
+
+Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pass it the filepath of my Neorg file. The result is then piped into pandoc to create a pdf.
 
 ## Implementation status
 
-### Neorg Parser
-
-#### Legend
-
-- Implemented and tested: :heavy_check_mark:
-- Almost complete: :white_check_mark: 
-- Partly implemented: :heavy_multiplication_x:
-- Not implemented: :x:
-
-#### Tokenizer
-
-The Tokenizer is implemented in Neorg.Token
-
-- Attached Modifiers :heavy_check_mark:
-- Intersecting modifier :x:
-- Detached Modifiers :heavy_check_mark:
+- Attached Modifiers :white_check_mark: 
+- Intersecting modifiers :white_check_mark: 
+- Detached Modifiers :white_check_mark:
   - Heading :heavy_check_mark:
-  - List :heavy_check_mark:
-    - Unordered list :heavy_check_mark:
-    - Ordered list :heavy_check_mark:
-    - TODO lists :heavy_check_mark:
-  - Quote :heavy_check_mark: 
-  - Marker :heavy_check_mark: 
-  - Insertions :heavy_check_mark:
-- Definitions :heavy_multiplication_x:
+  - List :white_check_mark:
+    - Unordered lists :white_check_mark:
+    - Ordered lists :white_check_mark:
+    - TODO lists :white_check_mark:
+  - Quotes :white_check_mark: 
+  - Markers :heavy_check_mark: 
+  - Insertions :x:
+- Definitions :x:
 - Tags :x:
   - Carryover tags :x:
   - @document.meta :x:
@@ -56,15 +52,17 @@ The Tokenizer is implemented in Neorg.Token
   - @code :x:
   - @math :x:
   - Custom :x:
-- Trailing modifier :heavy_check_mark:
-- Escaping :heavy_check_mark:
-- Horizontal line :heavy_check_mark:
+- Trailing modifiers :heavy_check_mark:
+- Escaping :x::heavy_check_mark:
+- Horizontal line :heavy_check_mark: 
 - Links :x:
 
-#### Parser
+### Legend
 
-Not yet started
+- Implemented: :heavy_check_mark:
+- Work in Progress: :white_check_mark: 
+- Not implemented: :x:
 
-### Transformation to Pandoc AST
 
-Not yet started
+
+
