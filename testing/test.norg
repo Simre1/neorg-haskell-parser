@@ -1,44 +1,14 @@
 @document.meta
-	title: test
-	description: 
-	author: simon
-	categories: 
-	created: 2021-09-28
-	version: 0.1
+  title: test
+  description: 
+  author: simon
+  categories: 
+  created: 2021-11-08
+  version: 0.1
 @end
 
+This is a simple paragraph with a *bold* word.
 
-* test
+* My test file
 
-asdasd
-
-* really
-
- ** wow
-    asdasd
-
-  *** test
-
- ** whats this
-    asdasd
-    asdasd
-
-> a quote
-asd
-- asasd
-
-* no way
-
-  */3434/*
-
-
-  asdadkhjaksd
-
-
-  - list: test
-    -- really: 2
-  - list2
-  - list3
-
-
-  sdfsdf
+  Some test text

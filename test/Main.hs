@@ -1,10 +1,10 @@
 module Main where
 
 import Test.Tasty
-import Tokenizer
+import Parser
 
 main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Tests" [tokenizerTests]
+tests = testGroup "Tests" [parserTests]
