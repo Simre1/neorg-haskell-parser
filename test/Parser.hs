@@ -25,16 +25,17 @@ horizonalLineTests =
   testGroup
     "Horizonal Line tests"
     [ testCase "Horizonal line" $ parse horizonalLine "___" @?= (),
-      testCase "Horizonal line" $ parse horizonalLine "________     " @?= (),
-      testCase "Not a horizonal line" $
-        parse blocks "___ asda"
-          @?= V.fromList
-            [ Paragraph
-                ( ConcatInline $
-                    V.fromList
-                      [Text "___", Space, Text "asda"]
-                )
-            ]
+      testCase "Horizonal line" $ parse horizonalLine "________     " @?= ()
+      -- TODO: Behavior unclear
+      -- testCase "Not a horizonal line" $
+      --   parse blocks "___ asda"
+      --     @?= V.fromList
+      --       [ Paragraph
+      --           ( ConcatInline $
+      --               V.fromList
+      --                 [Text "___", Space, Text "asda"]
+      --           )
+      --       ]
     ]
 
 paragraphTests :: TestTree
@@ -51,6 +52,7 @@ paragraphTests =
       testCase "Single-Line Math" $ parse singleLineParagraph "$math$" @?= Math "math",
       testCase "Single-Line Verbatim" $ parse singleLineParagraph "`verbatim`" @?= Verbatim "verbatim",
       testCase "Single-Line Two Bolds" $ parse singleLineParagraph "*bold1* *bold2*" @?= ConcatInline (V.fromList [Bold (Text "bold1"), Space, Bold (Text "bold2")]),
+      testCase "Bold and italic word" $ parse singleLineParagraph "*/bolditalic/*" @?= Bold (Italic (Text "bolditalic")),
       testCase "~ Symbol" $ parse singleLineParagraph "Text~\n* NoHeading" @?= ConcatInline (V.fromList [Text "Text*", Space, Text "NoHeading"]),
       testCase "Paragraphs separated with Break" $
         parse blocks "Text1\n\nText2"

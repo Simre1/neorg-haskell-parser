@@ -97,6 +97,8 @@ convertDocument (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> 
       ConcatInline inlines -> V.foldMap id <$> traverse convertInline inlines
       Link url inlines -> P.link url "" <$> convertInline inlines -- TODO: Investigate title field
       Space -> pure P.space
+      Verbatim t -> pure $ P.code t
+      Math t -> pure $ P.math t
 
 vecToMany :: V.Vector a -> P.Many a
 vecToMany = P.Many . S.fromList . V.toList
