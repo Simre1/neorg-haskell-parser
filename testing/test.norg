@@ -7,8 +7,8 @@
   version: 0.1
 @end
 
-This is a simple paragraph with a *bold* word.
+This is a simple paragraph with a */bold itatlic/* word.
 
 * My test file
 
-  Some test text
+  Some test text testset `c = a`
