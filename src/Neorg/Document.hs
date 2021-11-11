@@ -123,7 +123,7 @@ data Inline
   | Bold Inline
   | Italic Inline
   | Underline Inline
-  | StrikeThrough Inline
+  | Strikethrough Inline
   | Superscript Inline
   | Subscript Inline
   | Spoiler Inline
@@ -132,38 +132,52 @@ data Inline
   | Space
   deriving (Show, Eq)
 
+instance Semigroup Inline where
+  i1 <> i2 = ConcatInline $ V.fromList [i1,i2]
+
+instance Monoid Inline where
+  mempty = ConcatInline V.empty
+
 canonalizeInline :: Inline -> Inline
 canonalizeInline = \case
   ConcatInline inlines ->
-    let vector = processInlines inlines
+    let vector = V.fromList $ processInlinesV inlines
      in if V.length vector == 1
           then V.head vector
           else ConcatInline vector
   a -> a
   where
-    toVector :: Inline -> V.Vector Inline
-    toVector = \case
-      ConcatInline v -> processInlines v
-      i -> V.singleton i
-    processInlines :: V.Vector Inline -> V.Vector Inline
-    processInlines =
-      V.fromList
-        . V.foldr
-          ( \i b -> case (i, b) of
-              (Text t1, (Text t2) : r) -> Text (t1 <> t2) : r
-              (Text t, r) -> Text t : r
-              (ConcatInline is, r) -> V.toList (processInlines is) <> r
-              (Bold i, r) -> Bold (canonalizeInline i) : r
-              (Italic i, r) -> Italic (canonalizeInline i) : r
-              (Underline i, r) -> Underline (canonalizeInline i) : r
-              (StrikeThrough i, r) -> StrikeThrough (canonalizeInline i) : r
-              (Superscript i, r) -> Superscript (canonalizeInline i) : r
-              (Subscript i, r) -> Subscript (canonalizeInline i) : r
-              (Spoiler i, r) -> Spoiler (canonalizeInline i) : r
-              (Link t i, r) -> Link t (canonalizeInline i) : r
-              (Space, r) -> Space : r
-          )
-          []
+    processInlinesV = processInlines . V.toList
+    processInlines :: [Inline] -> [Inline]
+    processInlines = \case
+        (Text t1 : x : r) -> case canonalizeInline x of
+          (Text t2) -> processInlines $ Text (t1 <> t2) : r
+          c -> Text t1 : c : processInlines r
+        (Text t1 : r) -> Text t1 : processInlines r
+        -- (ConcatInline is1 : ConcatInline is2 : r) -> processInlinesV (is1 <> is2) <> processInlines r
+        (ConcatInline is1 : r) -> processInlines $ V.toList is1 <> r
+        (Bold i : r) -> Bold (canonalizeInline i) : processInlines r
+        (Italic i : r) -> Italic (canonalizeInline i) : processInlines r
+        (Underline i : r) -> Underline (canonalizeInline i) : processInlines r
+        (Strikethrough i : r) -> Strikethrough (canonalizeInline i) : processInlines r
+        (Superscript i : r) -> Superscript (canonalizeInline i) : processInlines r
+        (Subscript i : r) -> Subscript (canonalizeInline i) : processInlines r
+        (Spoiler i : r) -> Spoiler (canonalizeInline i) : processInlines r
+        (Link t i : r) -> Link t (canonalizeInline i) : processInlines r
+        (Space : r) -> Space : processInlines r
+        [] -> []
+      
+
+      -- V.fromList
+      --   . V.foldr
+      --     ( \i b -> case (i, b) of
+      --         (Text t1, x : r) -> case canonalizeInline x of
+      --           (Text t2) -> Text (t1 <> t2) : r
+      --           c -> Text t1 : c : r
+      --         (Text t, r) -> Text t : r
+
+      --     )
+      --     []
 
 -- prettyInline :: Inline -> Text
 -- prettyInline = \case
