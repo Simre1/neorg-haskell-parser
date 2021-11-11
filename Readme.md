@@ -27,7 +27,7 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
 
 ## Implementation status
 
-- Attached Modifiers :white_check_mark: 
+- Attached Modifiers :heavy_check_mark: 
 - Intersecting modifiers :white_check_mark: 
 - Detached Modifiers :white_check_mark:
   - Heading :heavy_check_mark:

@@ -42,8 +42,14 @@ paragraphTests =
   testGroup
     "Paragraph tests"
     [ testCase "Single-Line Bold" $ parse singleLineParagraph "*bold*" @?= Bold (Text "bold"),
+      testCase "Single-Line Italic" $ parse singleLineParagraph "/italic/" @?= Italic (Text "italic"),
+      testCase "Single-Line Underline" $ parse singleLineParagraph "_underline_" @?= Underline (Text "underline"),
+      testCase "Single-Line Strikethrough" $ parse singleLineParagraph "-strike-" @?= Strikethrough (Text "strike"),
+      testCase "Single-Line Superscript" $ parse singleLineParagraph "^super^" @?= Superscript (Text "super"),
+      testCase "Single-Line Subscript" $ parse singleLineParagraph ",sub," @?= Subscript (Text "sub"),
+      testCase "Single-Line Spoiler" $ parse singleLineParagraph "|spoiler|" @?= Spoiler (Text "spoiler"),
       testCase "Single-Line Two Bolds" $ parse singleLineParagraph "*bold1* *bold2*" @?= ConcatInline (V.fromList [Bold (Text "bold1"), Space, Bold (Text "bold2")]),
-      testCase "~ Symbol" $ parse singleLineParagraph "Text~\n* NoHeading" @?= ConcatInline (V.fromList [Text "Text", Text "*", Space, Text "NoHeading"]),
+      testCase "~ Symbol" $ parse singleLineParagraph "Text~\n* NoHeading" @?= ConcatInline (V.fromList [Text "Text*", Space, Text "NoHeading"]),
       testCase "Paragraphs separated with Break" $
         parse blocks "Text1\n\nText2"
           @?= V.fromList
@@ -56,11 +62,11 @@ paragraphTests =
             [ Paragraph
                 ( ConcatInline $
                     V.fromList
-                      [Text "Simple", Space, Text "sentence", Text "."]
+                      [Text "Simple", Space, Text "sentence."]
                 ),
               Paragraph
                 ( ConcatInline $
-                    V.fromList [Text "Another", Space, Text "sentence", Text "."]
+                    V.fromList [Text "Another", Space, Text "sentence."]
                 )
             ]
     ]
