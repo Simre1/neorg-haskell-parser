@@ -90,7 +90,7 @@ convertDocument (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> 
       Bold inline -> P.strong <$> convertInline inline
       Italic inline -> P.emph <$> convertInline inline
       Underline inline -> P.underline <$> convertInline inline
-      StrikeThrough inline -> P.strikeout <$> convertInline inline
+      Strikethrough inline -> P.strikeout <$> convertInline inline
       Superscript inline -> P.superscript <$> convertInline inline
       Subscript inline -> P.subscript <$> convertInline inline
       Spoiler inline -> P.strikeout <$> convertInline inline -- TODO: No native spoilers in pandoc

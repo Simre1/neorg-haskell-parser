@@ -33,7 +33,12 @@ data ParserState = ParserState
     _parserListLevel :: IndentationLevel
   }
 
-data InlineState = InlineState {_modifierStack :: [(Maybe Char, Inline)], _singleLine :: Bool}
+data InlineState = InlineState {_modifierInline :: ModifierInline, _singleLine :: Bool}
+
+data ModifierInline = NoModifier Inline | OpenModifier Char Inline ModifierInline
+
+hasModifier c (NoModifier _) = False
+hasModifier c1 (OpenModifier c2 i b) = c1 == c2 || hasModifier c1 b
 
 type Parser = ParsecT Void Text (State ParserState)
 
@@ -41,7 +46,9 @@ makeLenses ''ParserState
 
 makeLenses ''InlineState
 
-initialInlineState = InlineState [(Nothing, ConcatInline V.empty)] False
+makeLenses ''ModifierInline
+
+initialInlineState = InlineState (NoModifier (ConcatInline V.empty)) False
 
 defaultParserState = ParserState I0 I0
 
@@ -192,11 +199,12 @@ singleLineParagraph = do
 
 runInline :: StateT InlineState Parser () -> Parser Inline
 runInline p = do
-  (_, InlineState inlineState t) <- runStateT p initialInlineState
-  pure $ go inlineState
+  (_, inlineState) <- runStateT p initialInlineState
+  pure $ reduceModifierInline $ inlineState ^. modifierInline
   where
-    go [(Nothing, i)] = i
-    go ((Just c, i) : r) = ConcatInline $ V.fromList [go r, Text $ pack [c], i]
+    reduceModifierInline :: ModifierInline -> Inline
+    reduceModifierInline (NoModifier i) = i
+    reduceModifierInline (OpenModifier c i b) = ConcatInline $ V.fromList [reduceModifierInline b, Text $ pack [c], i]
 
 paragraph' :: StateT InlineState Parser ()
 paragraph' = do
@@ -204,14 +212,40 @@ paragraph' = do
   withNextChar $ \c -> openings c <|> word c
   where
     appendInlineToStack :: Inline -> StateT InlineState Parser ()
-    appendInlineToStack t = modify $ modifierStack %~ \((c, o) : r) -> (c, ConcatInline $ V.fromList [o, t]) : r
+    appendInlineToStack t =
+      modify $
+        modifierInline %~ \case
+          NoModifier i -> NoModifier $ i <> t
+          OpenModifier c i b -> OpenModifier c (i <> t) b
 
     openings :: Char -> StateT InlineState Parser ()
     openings = \case
-      '*' -> lift (P.try $ anyChar >> P.lookAhead (anyChar >>= guard . isLetter)) >> pushStack '*' >> withNextChar (\c -> P.choice [parNewline c, openings c, closings c, word c])
+      '*' -> parseOpening '*'
+      '/' -> parseOpening '/'
+      '_' -> parseOpening '_'
+      '-' -> parseOpening '-'
+      '^' -> parseOpening '^'
+      ',' -> parseOpening ','
+      '|' -> parseOpening '|'
+      -- '`' -> parseOpening
+      -- '$' -> parseOpening
+      -- '=' -> parseOpening
       _ -> fail "No openings"
       where
-        pushStack c = modify $ modifierStack %~ ((Just c, ConcatInline V.empty) :)
+        pushStack c = do
+          s <- gets (view modifierInline)
+          new <- case s of
+            NoModifier i -> pure $ OpenModifier c mempty (NoModifier i)
+            stack@(OpenModifier cm i b) ->
+              if not $ hasModifier c stack
+                then pure $ OpenModifier c mempty stack
+                else fail "No open modifier" -- OpenModifier cm (i <> Text (pack [c])) b
+          modify $ modifierInline .~ new
+        parseOpening c = do
+          P.try $ do
+            anyChar >> P.lookAhead (anyChar >>= guard . isLetter)
+            pushStack c
+          withNextChar (\c -> P.choice [parNewline c, openings c, word c])
 
     space :: Char -> StateT InlineState Parser ()
     space = \case
@@ -222,33 +256,47 @@ paragraph' = do
 
     closings :: Char -> StateT InlineState Parser ()
     closings = \case
-      '*' ->
-        lift (P.try $ anyChar >> followedBy (singleSpace <|> newline)) >> popStack '*' Bold
-          >> P.eof <|> (lift lookChar >>= \c -> parNewline c <|> closings c <|> space c)
+      '*' -> parseClosing '*' Bold
+      '/' -> parseClosing '/' Italic
+      '_' -> parseClosing '_' Underline
+      '-' -> parseClosing '-' Strikethrough
+      '^' -> parseClosing '^' Superscript
+      ',' -> parseClosing ',' Subscript
+      '|' -> parseClosing '|' Spoiler
       _ -> fail "No closings"
       where
+        parseClosing c f = do
+          P.try $ do
+            anyChar >> followedBy (singleSpace <|> newline <|> withNextChar punctuationOrModifier)
+            popStack c f
+          withNextChar $ \c -> parNewline c <|> closings c <|> openings c <|> space c <|> punctuationOrModifier c
+
         popStack :: Char -> (Inline -> Inline) -> StateT InlineState Parser ()
-        popStack c f = modify $ modifierStack %~ go
+        popStack c f = do
+          s <- gets (view modifierInline)
+          new <- close s
+          modify $ modifierInline .~ new
           where
-            go [(Nothing, i)] = [(Nothing, ConcatInline $ V.fromList [i, Text $ pack [c]])]
-            go ((Just c1, i1) : (c2, i2) : r) =
-              if c == c1
-                then (c2, ConcatInline $ V.fromList [i2, f i1]) : r
-                else go $ (c2, ConcatInline $ V.fromList [i2, Text $ pack [c], i1]) : r
+            close (NoModifier b) = fail "No closing"
+            close (OpenModifier cm i b) =
+              case b of
+                (OpenModifier cd id bd) -> if c == cm then pure (OpenModifier cd (id <> f i) bd) else close (OpenModifier cd (id <> Text (pack [cm]) <> i) bd)
+                (NoModifier id) -> if c == cm then pure (NoModifier (id <> f i)) else fail "No closing"
 
     word :: Char -> StateT InlineState Parser ()
     word = \case
       c ->
         if
-            | S.member c punctuationSymbols -> do
+            | S.member c (punctuationSymbols <> attachedModifierSymbols) -> do
               p <- lift anyChar <&> pack . (: [])
               appendInlineToStack (Text p)
               withNextChar $ \c -> space c <|> parNewline c <|> closings c <|> openings c <|> word c
             | otherwise -> do
-              w <- P.takeWhile1P (Just "Word") (\c -> c > ' ' && S.notMember c punctuationSymbols)
+              w <- P.takeWhile1P (Just "Word") (\c -> c > ' ' && S.notMember c (punctuationSymbols <> attachedModifierSymbols))
               appendInlineToStack (Text w)
               withNextChar $ \c -> space c <|> parNewline c <|> closings c <|> word c
     punctuationSymbols = S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~"
+    attachedModifierSymbols = S.fromList "*/_-^,|`$="
 
     withNextChar :: (Char -> StateT InlineState Parser ()) -> StateT InlineState Parser ()
     withNextChar f = P.eof <|> (lookChar >>= f)
@@ -268,6 +316,11 @@ paragraph' = do
           P.hspace
           let break c = guard (c == '\n' || c == '\r')
           withNextChar (\c -> break c <|> openings c <|> word c)
+    punctuationOrModifier c = do
+      if S.member c (S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~" <> S.fromList "*/_-^,|`$=") 
+        then anyChar >> withNextChar (\c -> space c <|> parNewline c <|> closings c <|> openings c <|> word c)
+        else fail ""
+
 
 many1 p = p >>= \a -> (a :) <$> many p
 
