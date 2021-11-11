@@ -31,11 +31,11 @@ import Text.Megaparsec.Internal
 data ParserState = ParserState
   { _parserHeadingLevel :: IndentationLevel,
     _parserListLevel :: IndentationLevel
-  }
+  } deriving Show
 
-data InlineState = InlineState {_modifierInline :: ModifierInline, _singleLine :: Bool}
+data InlineState = InlineState {_modifierInline :: ModifierInline, _singleLine :: Bool} deriving Show
 
-data ModifierInline = NoModifier Inline | OpenModifier String Inline ModifierInline
+data ModifierInline = NoModifier Inline | OpenModifier String Inline ModifierInline deriving Show
 
 hasModifier c (NoModifier _) = False
 hasModifier c1 (OpenModifier c2 i b) = c1 == c2 || hasModifier c1 b
@@ -252,7 +252,7 @@ paragraph' = do
           modify $ modifierInline .~ new
         parseOpening c = do
           P.try $ do
-            anyChar >> P.lookAhead (anyChar >>= guard . isLetter)
+            anyChar >> withNextChar (\c -> guard $ isLetter c || S.member c specialSymbols)
             pushStack c
           withNextChar (\c -> P.choice [parNewline c, openings c, word c])
 
@@ -306,6 +306,8 @@ paragraph' = do
               withNextChar $ \c -> space c <|> parNewline c <|> closings c <|> word c
     punctuationSymbols = S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~"
     attachedModifierSymbols = S.fromList "*/_-^,|`$="
+    
+    specialSymbols = attachedModifierSymbols <> punctuationSymbols
 
     withNextChar :: (Char -> StateT InlineState Parser ()) -> StateT InlineState Parser ()
     withNextChar f = P.eof <|> (lookChar >>= f)

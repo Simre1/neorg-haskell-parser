@@ -154,7 +154,7 @@ canonalizeInline = \case
     processInlines = \case
         (Text t1 : x : r) -> case canonalizeInline x of
           (Text t2) -> processInlines $ Text (t1 <> t2) : r
-          c -> Text t1 : c : processInlines r
+          c -> Text t1 : processInlines (c : r)
         (Text t1 : r) -> Text t1 : processInlines r
         -- (ConcatInline is1 : ConcatInline is2 : r) -> processInlinesV (is1 <> is2) <> processInlines r
         (ConcatInline is1 : r) -> processInlines $ V.toList is1 <> r
