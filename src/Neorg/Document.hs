@@ -127,6 +127,8 @@ data Inline
   | Superscript Inline
   | Subscript Inline
   | Spoiler Inline
+  | Verbatim Text
+  | Math Text
   | ConcatInline (V.Vector Inline)
   | Link Text Inline
   | Space
@@ -163,6 +165,8 @@ canonalizeInline = \case
         (Superscript i : r) -> Superscript (canonalizeInline i) : processInlines r
         (Subscript i : r) -> Subscript (canonalizeInline i) : processInlines r
         (Spoiler i : r) -> Spoiler (canonalizeInline i) : processInlines r
+        (Math t : r) -> Math t : processInlines r
+        (Verbatim t : r) -> Verbatim t : processInlines r
         (Link t i : r) -> Link t (canonalizeInline i) : processInlines r
         (Space : r) -> Space : processInlines r
         [] -> []
