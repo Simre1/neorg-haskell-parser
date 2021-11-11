@@ -35,7 +35,7 @@ data ParserState = ParserState
 
 data InlineState = InlineState {_modifierInline :: ModifierInline, _singleLine :: Bool}
 
-data ModifierInline = NoModifier Inline | OpenModifier Char Inline ModifierInline
+data ModifierInline = NoModifier Inline | OpenModifier String Inline ModifierInline
 
 hasModifier c (NoModifier _) = False
 hasModifier c1 (OpenModifier c2 i b) = c1 == c2 || hasModifier c1 b
@@ -204,7 +204,7 @@ runInline p = do
   where
     reduceModifierInline :: ModifierInline -> Inline
     reduceModifierInline (NoModifier i) = i
-    reduceModifierInline (OpenModifier c i b) = ConcatInline $ V.fromList [reduceModifierInline b, Text $ pack [c], i]
+    reduceModifierInline (OpenModifier c i b) = ConcatInline $ V.fromList [reduceModifierInline b, Text $ pack c, i]
 
 paragraph' :: StateT InlineState Parser ()
 paragraph' = do
@@ -220,18 +220,27 @@ paragraph' = do
 
     openings :: Char -> StateT InlineState Parser ()
     openings = \case
-      '*' -> parseOpening '*'
-      '/' -> parseOpening '/'
-      '_' -> parseOpening '_'
-      '-' -> parseOpening '-'
-      '^' -> parseOpening '^'
-      ',' -> parseOpening ','
-      '|' -> parseOpening '|'
-      -- '`' -> parseOpening
-      -- '$' -> parseOpening
-      -- '=' -> parseOpening
+      '*' -> parseOpening "*"
+      '/' -> parseOpening "/"
+      '_' -> parseOpening "_"
+      '-' -> parseOpening "-"
+      '^' -> parseOpening "^"
+      ',' -> parseOpening ","
+      '|' -> parseOpening "|"
+      '`' -> parseTextModifier "`" Verbatim
+      '$' -> parseTextModifier "$" Math
+      -- '=' -> parseOpening TODO: Behavior unclear
       _ -> fail "No openings"
       where
+        parseTextModifier :: Text -> (Text -> Inline) -> StateT InlineState Parser ()
+        parseTextModifier char f = P.try (go "") <|>  word (T.head char) 
+          where 
+              go :: Text -> StateT InlineState Parser ()
+              go previousText = do
+                P.string char
+                text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.head char && c /= '\n')
+                let fullText = previousText <> text
+                (P.string char >> appendInlineToStack (f fullText)) <|> (P.newline >> P.hspace >> P.newline >> fail "No Text modifier") <|> (P.newline >> P.hspace >> go fullText)
         pushStack c = do
           s <- gets (view modifierInline)
           new <- case s of
@@ -256,13 +265,13 @@ paragraph' = do
 
     closings :: Char -> StateT InlineState Parser ()
     closings = \case
-      '*' -> parseClosing '*' Bold
-      '/' -> parseClosing '/' Italic
-      '_' -> parseClosing '_' Underline
-      '-' -> parseClosing '-' Strikethrough
-      '^' -> parseClosing '^' Superscript
-      ',' -> parseClosing ',' Subscript
-      '|' -> parseClosing '|' Spoiler
+      '*' -> parseClosing "*" Bold
+      '/' -> parseClosing "/" Italic
+      '_' -> parseClosing "_" Underline
+      '-' -> parseClosing "-" Strikethrough
+      '^' -> parseClosing "^" Superscript
+      ',' -> parseClosing "," Subscript
+      '|' -> parseClosing "|" Spoiler
       _ -> fail "No closings"
       where
         parseClosing c f = do
@@ -271,7 +280,7 @@ paragraph' = do
             popStack c f
           withNextChar $ \c -> parNewline c <|> closings c <|> openings c <|> space c <|> punctuationOrModifier c
 
-        popStack :: Char -> (Inline -> Inline) -> StateT InlineState Parser ()
+        popStack :: String -> (Inline -> Inline) -> StateT InlineState Parser ()
         popStack c f = do
           s <- gets (view modifierInline)
           new <- close s
@@ -280,7 +289,7 @@ paragraph' = do
             close (NoModifier b) = fail "No closing"
             close (OpenModifier cm i b) =
               case b of
-                (OpenModifier cd id bd) -> if c == cm then pure (OpenModifier cd (id <> f i) bd) else close (OpenModifier cd (id <> Text (pack [cm]) <> i) bd)
+                (OpenModifier cd id bd) -> if c == cm then pure (OpenModifier cd (id <> f i) bd) else close (OpenModifier cd (id <> Text (pack cm) <> i) bd)
                 (NoModifier id) -> if c == cm then pure (NoModifier (id <> f i)) else fail "No closing"
 
     word :: Char -> StateT InlineState Parser ()

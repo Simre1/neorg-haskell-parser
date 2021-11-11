@@ -48,6 +48,8 @@ paragraphTests =
       testCase "Single-Line Superscript" $ parse singleLineParagraph "^super^" @?= Superscript (Text "super"),
       testCase "Single-Line Subscript" $ parse singleLineParagraph ",sub," @?= Subscript (Text "sub"),
       testCase "Single-Line Spoiler" $ parse singleLineParagraph "|spoiler|" @?= Spoiler (Text "spoiler"),
+      testCase "Single-Line Math" $ parse singleLineParagraph "$math$" @?= Math "math",
+      testCase "Single-Line Verbatim" $ parse singleLineParagraph "`verbatim`" @?= Verbatim "verbatim",
       testCase "Single-Line Two Bolds" $ parse singleLineParagraph "*bold1* *bold2*" @?= ConcatInline (V.fromList [Bold (Text "bold1"), Space, Bold (Text "bold2")]),
       testCase "~ Symbol" $ parse singleLineParagraph "Text~\n* NoHeading" @?= ConcatInline (V.fromList [Text "Text*", Space, Text "NoHeading"]),
       testCase "Paragraphs separated with Break" $
