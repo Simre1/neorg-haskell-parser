@@ -31,11 +31,11 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
 - Intersecting modifiers :x: 
 - Detached Modifiers :white_check_mark:
   - Heading :heavy_check_mark:
-  - List :white_check_mark:
-    - Unordered lists :white_check_mark:
-    - Ordered lists :white_check_mark:
-    - TODO lists :white_check_mark:
-  - Quotes :white_check_mark: 
+  - List :heavy_check_mark:
+    - Unordered lists :heavy_check_mark:
+    - Ordered lists :heavy_check_mark:
+    - TODO lists :heavy_check_mark:
+  - Quotes :heavy_check_mark: 
   - Markers :heavy_check_mark: 
   - Insertions :x:
 - Definitions :x:
