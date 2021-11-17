@@ -28,7 +28,7 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
 ## Implementation status
 
 - Attached Modifiers :heavy_check_mark: 
-- Intersecting modifiers :white_check_mark: 
+- Intersecting modifiers :x: 
 - Detached Modifiers :white_check_mark:
   - Heading :heavy_check_mark:
   - List :white_check_mark:
@@ -53,7 +53,7 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
   - @math :x:
   - Custom :x:
 - Trailing modifiers :heavy_check_mark:
-- Escaping :x::heavy_check_mark:
+- Escaping :x:
 - Horizontal line :heavy_check_mark: 
 - Links :x:
 
