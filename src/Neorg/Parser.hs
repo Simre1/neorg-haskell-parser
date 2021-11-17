@@ -31,11 +31,12 @@ import Text.Megaparsec.Internal
 data ParserState = ParserState
   { _parserHeadingLevel :: IndentationLevel,
     _parserListLevel :: IndentationLevel
-  } deriving Show
+  }
+  deriving (Show)
 
-data InlineState = InlineState {_modifierInline :: ModifierInline, _singleLine :: Bool} deriving Show
+data InlineState = InlineState {_modifierInline :: ModifierInline, _singleLine :: Bool} deriving (Show)
 
-data ModifierInline = NoModifier Inline | OpenModifier String Inline ModifierInline deriving Show
+data ModifierInline = NoModifier Inline | OpenModifier String Inline ModifierInline deriving (Show)
 
 hasModifier c (NoModifier _) = False
 hasModifier c1 (OpenModifier c2 i b) = c1 == c2 || hasModifier c1 b
@@ -78,10 +79,10 @@ blocks = do
 specialLineStart :: Char -> Parser Block
 specialLineStart = \case
   '*' -> Heading <$> heading
-  '-' -> List . TaskList <$> taskList <|> List . UnorderedList <$> unorderedList <|> weakDelimiter
+  '-' -> List . TaskList <$> taskList I0 <|> List . UnorderedList <$> unorderedList I0 <|> weakDelimiter
   '=' -> strongDelimiter
   '>' -> Quote <$> quote
-  '~' -> List . OrderedList <$> orderedList
+  '~' -> List . OrderedList <$> orderedList I0
   '_' -> horizonalLine $> HorizonalLine
   '|' -> Marker <$> marker
   _ -> fail "Not one of: Heading, Delimiter"
@@ -108,14 +109,14 @@ failOnSpecialLineStart =
 horizonalLine :: Parser ()
 horizonalLine = P.try $ repeating '_' >>= guard . (> 2) >> P.hspace >> newline
 
-unorderedList :: Parser UnorderedList
-unorderedList = makeListParser '-' singleSpace $ \l v -> UnorderedListCons {_uListLevel = l, _uListItems = fmap snd v}
+unorderedList :: IndentationLevel -> Parser UnorderedList
+unorderedList l = makeListParser l '-' singleSpace $ \l v -> UnorderedListCons {_uListLevel = l, _uListItems = fmap snd v}
 
-orderedList :: Parser OrderedList
-orderedList = makeListParser '~' singleSpace $ \l v -> OrderedListCons {_oListLevel = l, _oListItems = fmap snd v}
+orderedList :: IndentationLevel -> Parser OrderedList
+orderedList l = makeListParser l '~' singleSpace $ \l v -> OrderedListCons {_oListLevel = l, _oListItems = fmap snd v}
 
-taskList :: Parser TaskList
-taskList = makeListParser '-' (singleSpace >> parseTask) $ \l v -> TaskListCons {_tListLevel = l, _tListItems = v}
+taskList :: IndentationLevel -> Parser TaskList
+taskList l = makeListParser l '-' (singleSpace >> parseTask) $ \l v -> TaskListCons {_tListLevel = l, _tListItems = v}
   where
     parseTask = do
       P.char '['
@@ -124,17 +125,26 @@ taskList = makeListParser '-' (singleSpace >> parseTask) $ \l v -> TaskListCons 
       P.char ' '
       pure status
 
-makeListParser :: Char -> Parser a -> (IndentationLevel -> V.Vector (a, V.Vector ListBlock) -> l) -> Parser l
-makeListParser c p f = do
-  (level, a) <- P.try $ repeatingLevel c >>= \l -> p <&> (l,)
-  items1 <- manyV $ P.hspace >> ListParagraph <$> paragraph
+makeListParser :: IndentationLevel -> Char -> Parser a -> (IndentationLevel -> V.Vector (a, V.Vector ListBlock) -> l) -> Parser l
+makeListParser minLevel c p f = do
+  (level, a) <- P.try $ repeatingLevel c >>= \l -> guard (minLevel <= l) >> p <&> (l,)
+  items1 <- manyV $ P.hspace >> listBlock level
   itemsN <- many $ listItem level
   pure $ f level $ V.fromList ((a, items1) : itemsN)
   where
     listItem level = do
       (_, a) <- P.try $ P.hspace >> repeatingLevel c >>= \l -> guard (level == l) >> p <&> (l,)
-      items <- many $ P.hspace >> ListParagraph <$> paragraph
+      items <- many $ P.hspace >> listBlock level
       pure (a, V.fromList items)
+    listBlock :: IndentationLevel -> Parser ListBlock
+    listBlock currentLevel =
+      ( P.lookAhead anyChar >>= \case
+          '~' -> SubList . OrderedList <$> orderedList (succ currentLevel)
+          '-' -> SubList <$> (UnorderedList <$> unorderedList (succ currentLevel) <|> TaskList <$> taskList (succ currentLevel))
+          _ -> ListParagraph <$> singleLineParagraph
+      )
+        <|> ListParagraph
+        <$> singleLineParagraph
 
 weakDelimiter :: Parser Block
 weakDelimiter = do
@@ -233,14 +243,14 @@ paragraph' = do
       _ -> fail "No openings"
       where
         parseTextModifier :: Text -> (Text -> Inline) -> StateT InlineState Parser ()
-        parseTextModifier char f = P.try (go "") <|>  word (T.head char) 
-          where 
-              go :: Text -> StateT InlineState Parser ()
-              go previousText = do
-                P.string char
-                text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.head char && c /= '\n')
-                let fullText = previousText <> text
-                (P.string char >> appendInlineToStack (f fullText)) <|> (P.newline >> P.hspace >> P.newline >> fail "No Text modifier") <|> (P.newline >> P.hspace >> go fullText)
+        parseTextModifier char f = P.try (go "") <|> word (T.head char)
+          where
+            go :: Text -> StateT InlineState Parser ()
+            go previousText = do
+              P.string char
+              text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.head char && c /= '\n')
+              let fullText = previousText <> text
+              (P.string char >> appendInlineToStack (f fullText)) <|> (P.newline >> P.hspace >> P.newline >> fail "No Text modifier") <|> (P.newline >> P.hspace >> go fullText)
         pushStack c = do
           s <- gets (view modifierInline)
           new <- case s of
@@ -306,7 +316,7 @@ paragraph' = do
               withNextChar $ \c -> space c <|> parNewline c <|> closings c <|> word c
     punctuationSymbols = S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~"
     attachedModifierSymbols = S.fromList "*/_-^,|`$="
-    
+
     specialSymbols = attachedModifierSymbols <> punctuationSymbols
 
     withNextChar :: (Char -> StateT InlineState Parser ()) -> StateT InlineState Parser ()
@@ -328,10 +338,9 @@ paragraph' = do
           let break c = guard (c == '\n' || c == '\r')
           withNextChar (\c -> break c <|> openings c <|> word c)
     punctuationOrModifier c = do
-      if S.member c (S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~" <> S.fromList "*/_-^,|`$=") 
+      if S.member c (S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~" <> S.fromList "*/_-^,|`$=")
         then anyChar >> withNextChar (\c -> space c <|> parNewline c <|> closings c <|> openings c <|> word c)
         else fail ""
-
 
 many1 p = p >>= \a -> (a :) <$> many p
 

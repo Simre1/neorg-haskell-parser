@@ -89,7 +89,7 @@ listTests =
   testGroup
     "List tests"
     [ testCase "Single unordered item" $
-        parse unorderedList "- test1"
+        parse (unorderedList I0) "- test1"
           @?= UnorderedListCons
             { _uListLevel = I0,
               _uListItems =
@@ -98,7 +98,7 @@ listTests =
                   $ ListParagraph (Text "test1")
             },
       testCase "Two unordered items" $
-        parse unorderedList "- test1\n- test2"
+        parse (unorderedList I0) "- test1\n- test2"
           @?= UnorderedListCons
             { _uListLevel = I0,
               _uListItems =
@@ -110,7 +110,7 @@ listTests =
                   ]
             },
       testCase "Ordered List" $
-        parse orderedList "~~ test1\n~~ test2"
+        parse (orderedList I0) "~~ test1\n~~ test2"
           @?= OrderedListCons
             { _oListLevel = I1,
               _oListItems =
@@ -122,7 +122,7 @@ listTests =
                   ]
             },
       testCase "Task List" $
-        parse taskList "- [x] Done\n- [*] Pending"
+        parse (taskList I0) "- [x] Done\n- [*] Pending"
           @?= TaskListCons
             { _tListLevel = I0,
               _tListItems =
@@ -151,6 +151,29 @@ listTests =
                           $ ListParagraph (Text "List")
                     },
               Paragraph (Text "Paragraph")
+            ],
+      testCase "Sublists" $
+        parse blocks "- l1: test\n~~ o1\n~~ o2\n- l2"
+          @?= V.fromList
+            [ List $
+                UnorderedList $
+                  UnorderedListCons
+                    { _uListLevel = I0,
+                      _uListItems =
+                        V.fromList
+                          [ V.fromList
+                              [ ListParagraph (ConcatInline $ V.fromList [Text "l1:", Space, Text "test"]),
+                                SubList
+                                  ( OrderedList $
+                                      OrderedListCons
+                                        { _oListLevel = I1,
+                                          _oListItems = V.fromList [V.singleton (ListParagraph (Text "o1")), V.singleton (ListParagraph (Text "o2"))]
+                                        }
+                                  )
+                              ],
+                            V.singleton $ ListParagraph (Text "l2")
+                          ]
+                    }
             ]
     ]
 
