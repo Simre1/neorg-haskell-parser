@@ -45,7 +45,7 @@ common common
 
 library
     import: common
-    exposed-modules:  Neorg, Neorg.Document, Neorg.Parser
+    exposed-modules:  Neorg, Neorg.Document, Neorg.Parser, Neorg.Document.Tag, Type.Set
 
     -- Modules included in this library but not exported.
     -- other-modules:

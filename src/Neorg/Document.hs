@@ -6,16 +6,20 @@ import Data.Data (Proxy)
 import qualified Data.Map as M
 import Data.Text (pack)
 import Data.Text as T (Text, unwords)
-import Data.Text.Lazy (toStrict)
-import Data.Text.Lazy.Builder
 import Data.Time.Calendar (Day, showGregorian)
 import qualified Data.Vector as V
 import Debug.Trace
 import Optics.Core
 import Optics.TH
+import Data.Void (Void)
+import qualified Text.Megaparsec as P
+import Unsafe.Coerce (unsafeCoerce)
+import GHC.TypeLits (Symbol, symbolVal, sameSymbol, KnownSymbol)
+import Data.Maybe
+import Type.Set
 
-data Document = Document
-  { _documentBlocks :: Blocks,
+data Document (tags :: TypeSet) = Document
+  { _documentBlocks :: Blocks tags ,
     _documentMeta :: DocumentMeta
   }
   deriving (Show, Eq)
@@ -52,23 +56,24 @@ instance Enum IndentationLevel where
 indentationLevelToInt :: IndentationLevel -> Int
 indentationLevelToInt = fromEnum
 
-data Block
+data Block (tags :: TypeSet)
   = Paragraph Inline
-  | Heading Heading
+  | Heading (Heading tags)
   | Quote Quote
   | List List
   | HorizonalLine
   | Marker Marker
+  | Tag (SomeTag tags)
   deriving (Show, Eq)
 
 -- Tag :: SomeTag tags -> Block
 
-type Blocks = V.Vector Block
+type Blocks tags = V.Vector (Block tags)
 
-data Heading = HeadingCons
+data Heading (tags :: TypeSet) = HeadingCons
   { _headingText :: Inline,
     _headingLevel :: IndentationLevel,
-    _headingContent :: Blocks
+    _headingContent :: Blocks tags
   }
   deriving (Show, Eq)
 
@@ -248,45 +253,26 @@ canonalizeInline = \case
     --   I3 -> fromString $ replicate 4 char
     --   I4 -> fromString $ replicate 5 char
     --   I5 -> fromString $ replicate 6 char
+  -- contentParser :: f a -> TagArguments a -> P.Parser (TagContent a)
+--
 
--- class Tag a where
---   tagName :: f a -> T.Text
---   type TagArguments a
---   type TagContent a
---   -- contentParser :: f a -> TagArguments a -> P.Parser (TagContent a)
---
--- data Ordered
---
--- instance Tag Ordered where
---   tagName _ = "ordered"
---   type TagArguments Ordered = (Int, Int, Int)
---   type TagContent Ordered = List 'Ordered
---   -- contentParser = undefined
---
--- data SomeTag (tags :: [*]) where
---   SomeTag :: Exists t tags => Proxy t -> TagArguments t -> TagContent t -> SomeTag tags
---
--- type family Exists a (as :: [*]) where
---   Exists a (a : _) = Tautology
---   Exists a (b : as) = Exists a as
--- --
--- -- class ParseTagArguments a where
--- --   generateParser :: f a -> P.Parser a
--- --
--- data Any = forall a. Any a
---
--- newtype TagHandler tags = TagHandler (M.Map T.Text Any)
---
--- handleTag :: TagHandler tags -> T.Text -> Maybe (P.Parser (SomeTag tags))
--- handleTag (TagHandler tagHandlers) tagName = fmap handle $ M.lookup tagName
---   where
---     handle (Any any) =
---       let (argParser, contentParser) = unsafeCoerce any
---       in argParser *> contentParser
---
--- class MakeTags (tags :: [*]) where
---   makeTagHandler :: Proxy tags -> TagHandler tags
---
+
+type TagParser = P.Parsec Void Text
+
+class (KnownSymbol a, Eq (TagArguments a), Eq (TagContent a), Show (TagArguments a), Show (TagContent a)) => Tag (a :: Symbol) where
+  type TagArguments a
+  type TagContent a
+  parseTagContent :: f a -> TagArguments a -> TagParser (TagContent a)
+
+data SomeTag (tags :: TypeSet) where
+  SomeTag :: Tag t => Proxy t -> TagArguments t -> TagContent t -> SomeTag tags
+
+instance Show (SomeTag tags) where
+  show (SomeTag tag args content) = show (symbolVal tag, args, content)
+
+instance Eq (SomeTag tags) where
+  (SomeTag p1 args1 content1) == (SomeTag p2 args2 content2) = 
+    isJust (p1 `sameSymbol` p2) && args1 == unsafeCoerce args2 && content1 == unsafeCoerce content2
 
 makeLenses ''Document
 makeLenses ''DocumentMeta
@@ -297,6 +283,4 @@ makeLenses ''UnorderedList
 makeLenses ''OrderedList
 makeLenses ''TaskList
 
-class Tautology
 
-instance Tautology

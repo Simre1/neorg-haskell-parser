@@ -9,13 +9,15 @@ import qualified Data.Sequence as S
 import Data.Text (Text, pack)
 import qualified Data.Text.IO as T
 import qualified Data.Vector as V
+import Debug.Trace
 import Neorg.Document
+import Neorg.Document.Tag
 import Neorg.Parser
 import Optics.Core
 import System.Environment (getArgs)
 import qualified Text.Pandoc.Builder as P
 import qualified Text.Pandoc.Definition as P
-import Debug.Trace
+import Type.Set
 
 main :: IO ()
 main = do
@@ -26,17 +28,17 @@ main = do
   fileContent <- T.readFile fileName
   case parse (pack fileName) fileContent of
     Left err -> T.putStrLn err
-    Right doc -> B.putStr $ encode $ convertDocument doc
+    Right doc -> B.putStr $ encode $ convertDocument tagHandler doc
 
 type Convert a = State () a
 
 runConvert :: Convert a -> a
 runConvert c = evalState c ()
 
-convertDocument :: Document -> P.Pandoc
-convertDocument (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> traverse convertBlock blocks
+convertDocument :: forall tags. tags ~ SupportedTags => GenerateTagParser tags => TagHandler tags (Convert P.Blocks) -> Document tags -> P.Pandoc
+convertDocument handler (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> traverse convertBlock blocks
   where
-    convertBlock :: Block -> Convert P.Blocks
+    convertBlock :: Block tags -> Convert P.Blocks
     convertBlock = \case
       Paragraph i -> convertParagraph i
       Heading heading -> convertHeading heading
@@ -44,6 +46,7 @@ convertDocument (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> 
       List list -> convertList list
       HorizonalLine -> convertHorizonalLine
       Marker marker -> convertMarker marker
+      Tag tag -> convertTag tag
 
     convertParagraph :: Inline -> Convert P.Blocks
     convertParagraph = fmap P.para . convertInline
@@ -74,7 +77,7 @@ convertDocument (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> 
       ListParagraph i -> P.para <$> convertInline i
       SubList l -> convertList l
 
-    convertHeading :: Heading -> Convert P.Blocks
+    convertHeading :: Heading tags -> Convert P.Blocks
     convertHeading heading = do
       text <- convertInline $ heading ^. headingText
       let header = P.header (succ . fromEnum $ heading ^. headingLevel) text
@@ -99,6 +102,13 @@ convertDocument (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> 
       Space -> pure P.space
       Verbatim t -> pure $ P.code t
       Math t -> pure $ P.math t
+    convertTag :: SomeTag tags -> Convert P.Blocks
+    convertTag = handleSomeTag handler
+
+type SupportedTags = FromList '[]
+
+tagHandler :: TagHandler SupportedTags (Convert P.Blocks)
+tagHandler = emptyTagHandler
 
 vecToMany :: V.Vector a -> P.Many a
 vecToMany = P.Many . S.fromList . V.toList
