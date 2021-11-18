@@ -8,7 +8,8 @@ import Neorg.Parser hiding (parse)
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Text.Megaparsec as P
-import Type.Set (TypeSet(Empty))
+import Type.Set (TypeSet(Empty), FromList)
+import Data.Data (Proxy(..))
 
 parse :: Parser a -> Text -> a
 parse p i =
@@ -24,7 +25,9 @@ parserTests =
 tagTests :: TestTree
 tagTests =   testGroup
     "Tag tests"
-    [ testCase "Unknown tag" $ parse (tag @Empty) "@unknown\n@end" @?= Nothing]
+    [ testCase "Unknown tag" $ parse (tag @Empty) "@unknown\n@end" @?= Nothing,
+      testCase "Code tag" $ parse (tag @(FromList '["code"])) "@code \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"code") Nothing "helloworld\n")
+      ]
 
 horizonalLineTests :: TestTree
 horizonalLineTests =
