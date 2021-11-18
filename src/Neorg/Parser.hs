@@ -20,6 +20,7 @@ import qualified Data.Vector as V
 import Data.Void
 import Debug.Trace
 import Neorg.Document
+import Neorg.Document.Tag (GenerateTagParser, parseTag)
 import Optics.Core
 import Optics.TH
 import Text.Megaparsec (parseErrorPretty)
@@ -30,7 +31,7 @@ import Text.Megaparsec.Internal
 
 data ParserState = ParserState
   { _parserHeadingLevel :: IndentationLevel,
-    _parserListLevel :: IndentationLevel
+    _parserMeta :: DocumentMeta
   }
   deriving (Show)
 
@@ -51,32 +52,33 @@ makeLenses ''ModifierInline
 
 initialInlineState = InlineState (NoModifier (ConcatInline V.empty)) False
 
-defaultParserState = ParserState I0 I0
+defaultParserState = ParserState I0 emptyDocumentMeta
 
-parse :: Text -> Text -> Either Text Document
+parse :: GenerateTagParser tags => Text -> Text -> Either Text (Document tags)
 parse fileName fileContent =
   left (pack . P.errorBundlePretty) $
     runIdentity $
       flip evalStateT defaultParserState $
         P.runParserT document (unpack fileName) fileContent
 
-document :: Parser Document
+document :: GenerateTagParser tags => Parser (Document tags)
 document = do
   blocks <- blocks
   pure $ Document blocks emptyDocumentMeta
 
-blocks :: Parser Blocks
+blocks :: GenerateTagParser tags => Parser (Blocks tags)
 blocks = do
   clearBlankSpace
   blocks <- P.many ((singleBlock <|> Paragraph <$> paragraph) >-> clearBlankSpace)
   pure $ V.fromList blocks
-  where
-    singleBlock = do
-      P.lookAhead anyChar >>= \case
-        ' ' -> P.hspace >> singleBlock
-        c -> specialLineStart c
 
-specialLineStart :: Char -> Parser Block
+singleBlock :: GenerateTagParser tags => Parser (Block tags)
+singleBlock = do
+  P.lookAhead anyChar >>= \case
+    ' ' -> P.hspace >> singleBlock
+    c -> specialLineStart c
+
+specialLineStart :: GenerateTagParser tags => Char -> Parser (Block tags)
 specialLineStart = \case
   '*' -> Heading <$> heading
   '-' -> List . TaskList <$> taskList I0 <|> List . UnorderedList <$> unorderedList I0 <|> weakDelimiter
@@ -85,6 +87,7 @@ specialLineStart = \case
   '~' -> List . OrderedList <$> orderedList I0
   '_' -> horizonalLine $> HorizonalLine
   '|' -> Marker <$> marker
+  '@' -> tag >>= maybe singleBlock (pure . Tag)
   _ -> fail "Not one of: Heading, Delimiter"
 
 failOnSpecialLineStart :: P.MonadParsec e Text p => p ()
@@ -104,7 +107,25 @@ failOnSpecialLineStart =
     '$' -> P.notFollowedBy (anyChar >> singleSpace)
     '_' -> P.notFollowedBy (repeating '_' >>= guard . (> 2) >> P.hspace >> P.newline)
     '|' -> P.notFollowedBy (P.char '|' >> singleSpace >> P.hspace >> textWord)
+    '@' -> P.notFollowedBy (anyChar >> anyChar >>= guard . isLetter)
     _ -> pure ()
+
+tag :: forall tags. GenerateTagParser tags => Parser (Maybe (SomeTag tags))
+tag = do
+  tagName <- P.try $ P.char '@' >> P.takeWhileP (Just "Tag description") (\c -> isLetter c || c == '.')
+  textParams <- many (P.hspace *> P.takeWhile1P (Just "Tag argument") (> ' '))
+  P.choice
+    [ P.eof >> pure Nothing,
+      P.newline >> do
+        let textContent =
+              P.takeWhileP (Just "Tag content") (/= '@') >>= \t ->
+                (P.try (P.string "@end") >> pure t) <|> (P.char '@' >> fmap ((t <> T.pack ['@']) <>) textContent)
+        content <- textContent
+        case parseTag @tags tagName of
+          Nothing -> pure Nothing
+          Just tagParser -> either (fail . P.errorBundlePretty) (pure . Just) $ P.runParser tagParser "Tag" content
+    ]
+  -- maybe (fail "That tag is not available") $ parseTag tagName
 
 horizonalLine :: Parser ()
 horizonalLine = P.try $ repeating '_' >>= guard . (> 2) >> P.hspace >> newline
@@ -146,14 +167,14 @@ makeListParser minLevel c p f = do
         <|> ListParagraph
         <$> singleLineParagraph
 
-weakDelimiter :: Parser Block
+weakDelimiter :: GenerateTagParser tags => Parser (Block tags)
 weakDelimiter = do
   level <- lift $ gets (view parserHeadingLevel)
   if level == I0
     then P.try (repeating '-' >> P.hspace >> P.newline) >> lookChar >>= specialLineStart
     else consumingTry $ P.try (repeating '-' >> P.hspace >> P.newline) >> lift (modify $ parserHeadingLevel %~ pred) >> fail "End current heading scope"
 
-strongDelimiter :: Parser Block
+strongDelimiter :: GenerateTagParser tags => Parser (Block tags)
 strongDelimiter = do
   level <- lift $ gets (view parserHeadingLevel)
   if level == I0
@@ -181,7 +202,7 @@ localState f p =
 clearBlankSpace :: Parser ()
 clearBlankSpace = void $ P.takeWhileP (Just "Clearing whitespace") (<= ' ')
 
-heading :: Parser Heading
+heading :: GenerateTagParser tags => Parser (Heading tags)
 heading = do
   (level, text) <- headingText
   content <- localState (parserHeadingLevel %~ succ) blocks

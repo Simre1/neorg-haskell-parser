@@ -8,6 +8,7 @@ import Neorg.Parser hiding (parse)
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Text.Megaparsec as P
+import Type.Set (TypeSet(Empty))
 
 parse :: Parser a -> Text -> a
 parse p i =
@@ -18,7 +19,12 @@ parserTests :: TestTree
 parserTests =
   testGroup
     "Parser tests"
-    [headingTests, paragraphTests, listTests, horizonalLineTests, markerTests]
+    [headingTests, paragraphTests, listTests, horizonalLineTests, markerTests, tagTests]
+
+tagTests :: TestTree
+tagTests =   testGroup
+    "Tag tests"
+    [ testCase "Unknown tag" $ parse (tag @Empty) "@unknown\n@end" @?= Nothing]
 
 horizonalLineTests :: TestTree
 horizonalLineTests =
@@ -55,13 +61,13 @@ paragraphTests =
       testCase "Bold and italic word" $ parse singleLineParagraph "*/bolditalic/*" @?= Bold (Italic (Text "bolditalic")),
       testCase "~ Symbol" $ parse singleLineParagraph "Text~\n* NoHeading" @?= ConcatInline (V.fromList [Text "Text*", Space, Text "NoHeading"]),
       testCase "Paragraphs separated with Break" $
-        parse blocks "Text1\n\nText2"
+        parse (blocks @Empty) "Text1\n\nText2"
           @?= V.fromList
             [ Paragraph (Text "Text1"),
               Paragraph (Text "Text2")
             ],
       testCase "Two sentences with blank space" $
-        parse blocks "Simple sentence.\n   \n   Another sentence.\n\n"
+        parse (blocks @Empty) "Simple sentence.\n   \n   Another sentence.\n\n"
           @?= V.fromList
             [ Paragraph
                 ( ConcatInline $
@@ -80,8 +86,8 @@ markerTests =
   testGroup
     "Marker tests"
     [ testCase "Simple Markup" $ parse marker "| Simple marker" @?= MarkerCons "simple-marker" "Simple marker",
-      testCase "Block Marker" $ parse blocks "| Simple marker" @?= V.fromList [Marker $ MarkerCons "simple-marker" "Simple marker"],
-      testCase "Not a Marker" $ parse blocks "|" @?= V.fromList [Paragraph $ Text "|"]
+      testCase "Block Marker" $ parse (blocks @Empty) "| Simple marker" @?= V.fromList [Marker $ MarkerCons "simple-marker" "Simple marker"],
+      testCase "Not a Marker" $ parse (blocks @Empty) "|" @?= V.fromList [Paragraph $ Text "|"]
     ]
 
 listTests :: TestTree
@@ -138,7 +144,7 @@ listTests =
                   ]
             },
       testCase "List with Paragraph" $
-        parse blocks "Paragraph\n- List\n\nParagraph"
+        parse (blocks @Empty) "Paragraph\n- List\n\nParagraph"
           @?= V.fromList
             [ Paragraph (Text "Paragraph"),
               List $
@@ -153,7 +159,7 @@ listTests =
               Paragraph (Text "Paragraph")
             ],
       testCase "Sublists" $
-        parse blocks "- l1: test\n~~ o1\n~~ o2\n- l2"
+        parse (blocks @Empty) "- l1: test\n~~ o1\n~~ o2\n- l2"
           @?= V.fromList
             [ List $
                 UnorderedList $
@@ -182,14 +188,14 @@ headingTests =
   testGroup
     "Heading tests"
     [ testCase "Heading" $
-        parse heading "* Heading"
+        parse (heading @Empty) "* Heading"
           @?= HeadingCons
             { _headingText = Text "Heading",
               _headingLevel = I0,
               _headingContent = V.empty
             },
       testCase "Equal Headings" $
-        parse blocks "* Heading1\n* Heading2"
+        parse (blocks @Empty) "* Heading1\n* Heading2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -205,10 +211,10 @@ headingTests =
                   }
             ],
       testCase "No Headings" $
-        parse blocks "*Heading1"
+        parse (blocks @Empty) "*Heading1"
           @?= V.singleton (Paragraph $ Text "*Heading1"),
       testCase "Nested Headings" $
-        parse heading "* Heading\n** SubHeading"
+        parse (heading @Empty) "* Heading\n** SubHeading"
           @?= HeadingCons
             { _headingText = Text "Heading",
               _headingLevel = I0,
@@ -223,7 +229,7 @@ headingTests =
                   )
             },
       testCase "Headings with Paragraph" $
-        parse blocks "* Heading1\nExample1\n* Heading2\nExample2"
+        parse (blocks @Empty) "* Heading1\nExample1\n* Heading2\nExample2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -241,7 +247,7 @@ headingTests =
                   }
             ],
       testCase "Weak delimiter" $
-        parse blocks "* Heading1\n---\n** Heading2"
+        parse (blocks @Empty) "* Heading1\n---\n** Heading2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -257,7 +263,7 @@ headingTests =
                   }
             ],
       testCase "Strong delimiter" $
-        parse blocks "* Heading1\n===\n** Heading2"
+        parse (blocks @Empty) "* Heading1\n===\n** Heading2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
