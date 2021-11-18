@@ -69,14 +69,16 @@ document = do
 blocks :: GenerateTagParser tags => Parser (Blocks tags)
 blocks = do
   clearBlankSpace
-  blocks <- P.many ((singleBlock <|> Paragraph <$> paragraph) >-> clearBlankSpace)
+  blocks <- P.many singleBlock
   pure $ V.fromList blocks
 
 singleBlock :: GenerateTagParser tags => Parser (Block tags)
-singleBlock = do
-  P.lookAhead anyChar >>= \case
-    ' ' -> P.hspace >> singleBlock
-    c -> specialLineStart c
+singleBlock = specialBlock <|> Paragraph <$> paragraph >-> clearBlankSpace
+  where
+    specialBlock = do
+          P.lookAhead anyChar >>= \case
+            ' ' -> P.hspace >> singleBlock
+            c -> specialLineStart c
 
 specialLineStart :: GenerateTagParser tags => Char -> Parser (Block tags)
 specialLineStart = \case
@@ -87,8 +89,8 @@ specialLineStart = \case
   '~' -> List . OrderedList <$> orderedList I0
   '_' -> horizonalLine $> HorizonalLine
   '|' -> Marker <$> marker
-  '@' -> tag >>= maybe singleBlock (pure . Tag)
-  _ -> fail "Not one of: Heading, Delimiter"
+  '@' -> tag >>= maybe (clearBlankSpace >> singleBlock) (pure . Tag)
+  _ -> fail "Not one of: Heading, Delimiter, Quote, List, Horizontal Line, Tag, Marker"
 
 failOnSpecialLineStart :: P.MonadParsec e Text p => p ()
 failOnSpecialLineStart =
@@ -107,16 +109,18 @@ failOnSpecialLineStart =
     '$' -> P.notFollowedBy (anyChar >> singleSpace)
     '_' -> P.notFollowedBy (repeating '_' >>= guard . (> 2) >> P.hspace >> P.newline)
     '|' -> P.notFollowedBy (P.char '|' >> singleSpace >> P.hspace >> textWord)
-    '@' -> P.notFollowedBy (anyChar >> anyChar >>= guard . isLetter)
+    '@' -> P.notFollowedBy (void (P.string "@end") <|> (anyChar >> anyChar >>= guard . isLetter))
     _ -> pure ()
 
 tag :: forall tags. GenerateTagParser tags => Parser (Maybe (SomeTag tags))
 tag = do
-  tagName <- P.try $ P.char '@' >> P.takeWhileP (Just "Tag description") (\c -> isLetter c || c == '.')
-  textParams <- many (P.hspace *> P.takeWhile1P (Just "Tag argument") (> ' '))
+  tagName <- P.try $ do
+    t <- P.char '@' >> P.takeWhileP (Just "Tag description") (\c -> isLetter c || c == '.')
+    guard (t /= "end")
+    pure t
+  P.hspace
   P.choice
-    [ P.eof >> pure Nothing,
-      P.newline >> do
+    [ P.eof >> pure Nothing, do
         let textContent =
               P.takeWhileP (Just "Tag content") (/= '@') >>= \t ->
                 (P.try (P.string "@end") >> pure t) <|> (P.char '@' >> fmap ((t <> T.pack ['@']) <>) textContent)
@@ -125,7 +129,6 @@ tag = do
           Nothing -> pure Nothing
           Just tagParser -> either (fail . P.errorBundlePretty) (pure . Just) $ P.runParser tagParser "Tag" content
     ]
-  -- maybe (fail "That tag is not available") $ parseTag tagName
 
 horizonalLine :: Parser ()
 horizonalLine = P.try $ repeating '_' >>= guard . (> 2) >> P.hspace >> newline
@@ -413,3 +416,6 @@ textWord = P.takeWhile1P (Just "Text word") (\c -> c /= ' ' && c /= '\n' && c /=
 --   let (s,r) = runIdentity $ runStateT (runParserT' p1 parserState) state
 --   a <- ParsecT $ \_ _ handleError _ _ -> either handleError pure r
 --   pure a
+
+instance ParseTagContent "code" where
+  parseTagContent _ args = P.takeWhileP (Just "Code block") (const True)
