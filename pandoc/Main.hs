@@ -105,10 +105,10 @@ convertDocument handler (Document blocks _meta) = runConvert $ P.doc . V.foldMap
     convertTag :: SomeTag tags -> Convert P.Blocks
     convertTag = handleSomeTag handler
 
-type SupportedTags = FromList '[]
+type SupportedTags = FromList '["code"]
 
 tagHandler :: TagHandler SupportedTags (Convert P.Blocks)
-tagHandler = emptyTagHandler
+tagHandler = handleTag @"code" $ \lang text -> pure $ P.codeBlock text
 
 vecToMany :: V.Vector a -> P.Many a
 vecToMany = P.Many . S.fromList . V.toList

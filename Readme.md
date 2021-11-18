@@ -39,7 +39,7 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
   - Markers :heavy_check_mark: 
   - Insertions :x:
 - Definitions :x:
-- Tags :x:
+- Tags :white_check_mark:
   - Carryover tags :x:
   - @document.meta :x:
   - @comment :x:
@@ -49,7 +49,7 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
   - @name :x:
   - @table :x:
   - @embed :x:
-  - @code :x:
+  - @code :heavy_check_mark:
   - @math :x:
   - Custom :x:
 - Trailing modifiers :heavy_check_mark:

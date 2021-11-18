@@ -256,12 +256,13 @@ canonalizeInline = \case
   -- contentParser :: f a -> TagArguments a -> P.Parser (TagContent a)
 --
 
-
 type TagParser = P.Parsec Void Text
 
 class (KnownSymbol a, Eq (TagArguments a), Eq (TagContent a), Show (TagArguments a), Show (TagContent a)) => Tag (a :: Symbol) where
   type TagArguments a
   type TagContent a
+
+class Tag a => ParseTagContent (a :: Symbol) where
   parseTagContent :: f a -> TagArguments a -> TagParser (TagContent a)
 
 data SomeTag (tags :: TypeSet) where
@@ -273,6 +274,12 @@ instance Show (SomeTag tags) where
 instance Eq (SomeTag tags) where
   (SomeTag p1 args1 content1) == (SomeTag p2 args2 content2) = 
     isJust (p1 `sameSymbol` p2) && args1 == unsafeCoerce args2 && content1 == unsafeCoerce content2
+
+instance Tag "code" where
+  type TagArguments "code" = Maybe Text
+  type TagContent "code" = Text
+
+
 
 makeLenses ''Document
 makeLenses ''DocumentMeta
