@@ -67,4 +67,4 @@ test-suite test
     main-is:    Main.hs
     other-modules: Parser
     hs-source-dirs: test
-    build-depends: neorg, tasty, tasty-hunit, base, text, megaparsec, transformers, vector, optics-core
+    build-depends: neorg, tasty, tasty-hunit, base, text, megaparsec, transformers, vector, optics-core, time

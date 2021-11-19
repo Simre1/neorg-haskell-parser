@@ -1,15 +1,16 @@
 module Parser where
 
 import Control.Monad.Trans.State
+import Data.Data (Proxy (..))
 import Data.Text
+import Data.Time (defaultTimeLocale, parseTimeM)
 import qualified Data.Vector as V
 import Neorg.Document
 import Neorg.Parser hiding (parse)
 import Test.Tasty
 import Test.Tasty.HUnit
 import qualified Text.Megaparsec as P
-import Type.Set (TypeSet(Empty), FromList)
-import Data.Data (Proxy(..))
+import Type.Set (FromList, TypeSet (Empty))
 
 parse :: Parser a -> Text -> a
 parse p i =
@@ -23,11 +24,31 @@ parserTests =
     [headingTests, paragraphTests, listTests, horizonalLineTests, markerTests, tagTests]
 
 tagTests :: TestTree
-tagTests =   testGroup
+tagTests =
+  testGroup
     "Tag tests"
     [ testCase "Unknown tag" $ parse (tag @Empty) "@unknown\n@end" @?= Nothing,
-      testCase "Code tag" $ parse (tag @(FromList '["code"])) "@code \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"code") Nothing "helloworld\n")
-      ]
+      testCase "Code tag" $ parse (tag @(FromList '["code"])) "@code \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"code") Nothing "helloworld\n"),
+      testCase "Math tag" $ parse (tag @(FromList '["math"])) "@math \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"math") () "helloworld\n"),
+      testCase "Comment tag" $ parse (tag @(FromList '["comment"])) "@comment \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"comment") () "helloworld\n"),
+      testCase "Embed image tag" $ parse (tag @(FromList '["embed"])) "@embed image \n   image.png\n@end" @?= Just (SomeTag (Proxy @"embed") "image" "image.png"),
+      testCase "Document meta" $
+        parse (tag @(FromList '["document.meta"])) "@document.meta\n  title: test\n  description:\n   author: simon\n  categories: \n  created: 2021-11-08\n  version: 0.1\n@end"
+          @?= Just
+            ( SomeTag
+                (Proxy @"document.meta")
+                ()
+                ( DocumentMeta
+                    { _documentTitle = Just "test",
+                      _documentDescription = Nothing,
+                      _documentAuthor = Just "simon",
+                      _documentCategories = V.fromList [],
+                      _documentCreated = parseTimeM True defaultTimeLocale "%Y-%-m-%-d" "2021-11-08",
+                      _documentVersion = Just "0.1"
+                    }
+                )
+            )
+    ]
 
 horizonalLineTests :: TestTree
 horizonalLineTests =

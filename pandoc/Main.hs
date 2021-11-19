@@ -36,7 +36,7 @@ runConvert :: Convert a -> a
 runConvert c = evalState c ()
 
 convertDocument :: forall tags. tags ~ SupportedTags => GenerateTagParser tags => TagHandler tags (Convert P.Blocks) -> Document tags -> P.Pandoc
-convertDocument handler (Document blocks _meta) = runConvert $ P.doc . V.foldMap id <$> traverse convertBlock blocks
+convertDocument handler (Document blocks) = runConvert $ P.doc . V.foldMap id <$> traverse convertBlock blocks
   where
     convertBlock :: Block tags -> Convert P.Blocks
     convertBlock = \case
@@ -105,10 +105,16 @@ convertDocument handler (Document blocks _meta) = runConvert $ P.doc . V.foldMap
     convertTag :: SomeTag tags -> Convert P.Blocks
     convertTag = handleSomeTag handler
 
-type SupportedTags = FromList '["code"]
+type SupportedTags = FromList '["code", "math", "comment", "embed", "document.meta"]
 
 tagHandler :: TagHandler SupportedTags (Convert P.Blocks)
-tagHandler = handleTag @"code" $ \lang text -> pure $ P.codeBlock text
+tagHandler = code `mergeHandler` math `mergeHandler` comment `mergeHandler` embed `mergeHandler` documentMeta
+  where
+    code = handleTag @"code" $ \_language text -> pure $ P.codeBlock text
+    math = handleTag @"math" $ \_ text -> pure $ P.plain $ P.displayMath text
+    comment = handleTag @"comment" $ \_ text -> pure mempty
+    embed = handleTag @"embed" $ \_embedType url -> pure $ P.plain $ P.image url "" mempty
+    documentMeta = handleTag @"document.meta" $ \_ _ -> pure mempty
 
 vecToMany :: V.Vector a -> P.Many a
 vecToMany = P.Many . S.fromList . V.toList

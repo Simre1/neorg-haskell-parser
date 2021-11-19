@@ -41,16 +41,17 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
 - Definitions :x:
 - Tags :white_check_mark:
   - Carryover tags :x:
-  - @document.meta :x:
-  - @comment :x:
+  - @document.meta :white_check_mark:
+  - @comment :heavy_check_mark:  
   - @ToC :x:
   - @ordered :x:
   - @color :x:
   - @name :x:
   - @table :x:
-  - @embed :x:
+  - @embed :heavy_check_mark: 
   - @code :heavy_check_mark:
-  - @math :x:
+  - @math :heavy_check_mark: 
+  - @image :x:
   - Custom :x:
 - Trailing modifiers :heavy_check_mark:
 - Escaping :x:
