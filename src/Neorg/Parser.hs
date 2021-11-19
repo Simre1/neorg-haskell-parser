@@ -28,6 +28,8 @@ import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as P
 import Text.Megaparsec.Internal
+import Data.Maybe (catMaybes)
+import Data.Time (parseTimeM, defaultTimeLocale)
 
 data ParserState = ParserState
   { _parserHeadingLevel :: IndentationLevel,
@@ -64,7 +66,7 @@ parse fileName fileContent =
 document :: GenerateTagParser tags => Parser (Document tags)
 document = do
   blocks <- blocks
-  pure $ Document blocks emptyDocumentMeta
+  pure $ Document blocks
 
 blocks :: GenerateTagParser tags => Parser (Blocks tags)
 blocks = do
@@ -202,7 +204,7 @@ localState f p =
   lift (get >-> modify f) >>= \s ->
     p >-> lift (put s)
 
-clearBlankSpace :: Parser ()
+clearBlankSpace ::P.MonadParsec e Text p => p ()
 clearBlankSpace = void $ P.takeWhileP (Just "Clearing whitespace") (<= ' ')
 
 heading :: GenerateTagParser tags => Parser (Heading tags)
@@ -419,3 +421,37 @@ textWord = P.takeWhile1P (Just "Text word") (\c -> c /= ' ' && c /= '\n' && c /=
 
 instance ParseTagContent "code" where
   parseTagContent _ args = P.takeWhileP (Just "Code block") (const True)
+
+instance ParseTagContent "math" where
+  parseTagContent _ args = P.takeWhileP (Just "Math block") (const True)
+
+instance ParseTagContent "comment" where
+  parseTagContent _ args = P.takeWhileP (Just "Comment block") (const True)
+
+instance ParseTagContent "embed" where
+  parseTagContent _ args = case args of
+    "image" -> P.hspace >> P.takeWhile1P (Just "Url string") (>' ')
+    a -> fail $ "I do not recognize the embed format " ++ show a
+
+instance ParseTagContent "document.meta" where
+  parseTagContent _ _ = do
+    clearBlankSpace
+    foldl makeDocumentMeta emptyDocumentMeta . catMaybes <$> P.many metaItem
+    where
+      makeDocumentMeta meta (field, value) = case field of
+        "title" -> meta & documentTitle ?~ value
+        "description" -> meta & documentDescription ?~ value 
+        "author" -> meta & documentAuthor ?~ value
+        "categories" -> meta & documentCategories .~ V.fromList (T.words value)
+        "created" -> meta & documentCreated .~ parseTimeM True defaultTimeLocale "%Y-%-m-%-d" (unpack value)
+        "version" -> meta & documentVersion ?~ value
+        _ -> meta
+      metaItem = do
+        field <- P.takeWhileP (Just "meta item") (\c -> c /= ':' && c /= '\n')
+        P.char ':'
+        value <- T.strip <$> P.takeWhileP (Just "meta field") (/= '\n')
+        clearBlankSpace
+        case value of
+          "" -> pure Nothing
+          _ -> pure $ Just (field, value)
+
