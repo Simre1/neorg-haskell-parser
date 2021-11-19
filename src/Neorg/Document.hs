@@ -19,8 +19,7 @@ import Data.Maybe
 import Type.Set
 
 data Document (tags :: TypeSet) = Document
-  { _documentBlocks :: Blocks tags ,
-    _documentMeta :: DocumentMeta
+  { _documentBlocks :: Blocks tags 
   }
   deriving (Show, Eq)
 
@@ -279,7 +278,21 @@ instance Tag "code" where
   type TagArguments "code" = Maybe Text
   type TagContent "code" = Text
 
+instance Tag "math" where
+  type TagArguments "math" = ()
+  type TagContent "math" = Text
 
+instance Tag "comment" where
+  type TagArguments "comment" = ()
+  type TagContent "comment" = Text
+
+instance Tag "embed" where
+  type TagArguments "embed" = Text
+  type TagContent "embed" = Text
+
+instance Tag "document.meta" where
+  type TagArguments "document.meta" = ()
+  type TagContent "document.meta" = DocumentMeta
 
 makeLenses ''Document
 makeLenses ''DocumentMeta

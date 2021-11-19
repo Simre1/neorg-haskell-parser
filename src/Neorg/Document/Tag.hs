@@ -58,8 +58,8 @@ handleTag :: forall a r. Tag a => (TagArguments a -> TagContent a -> r) -> TagHa
 handleTag f = TagHandler $ M.singleton (T.pack $ symbolVal (Proxy @a)) (Function $ \_ -> unsafeCoerce f)
 
 -- Left-biased merge
-mergeHandlers :: TagHandler tags1 r -> TagHandler tags2 r -> TagHandler (Merge tags1 tags2) r
-mergeHandlers (TagHandler tags1) (TagHandler tags2) = TagHandler $ M.union tags1 tags2
+mergeHandler :: TagHandler tags1 r -> TagHandler tags2 r -> TagHandler (Merge tags1 tags2) r
+mergeHandler (TagHandler tags1) (TagHandler tags2) = TagHandler $ M.union tags1 tags2
 
 handleSomeTag :: TagHandler tags r -> SomeTag tags -> r
 handleSomeTag (TagHandler handlers) (SomeTag p args content) = 
@@ -77,3 +77,6 @@ instance ParseTagArguments T.Text where
 
 instance ParseTagArguments a => ParseTagArguments (Maybe a) where
   parseTagArguments _ = Just <$> parseTagArguments (Proxy @a) <|> pure Nothing
+
+instance ParseTagArguments () where
+  parseTagArguments _ = pure ()
