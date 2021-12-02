@@ -294,6 +294,12 @@ instance Tag "document.meta" where
   type TagArguments "document.meta" = ()
   type TagContent "document.meta" = DocumentMeta
 
+instance Tag "table" where
+  type TagArguments "table" = ()
+  type TagContent "table" = Table
+
+newtype Table = Table (V.Vector (V.Vector Inline)) deriving (Show, Eq)
+
 makeLenses ''Document
 makeLenses ''DocumentMeta
 makeLenses ''Heading
