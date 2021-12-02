@@ -47,7 +47,7 @@ Here, I have used the `exec` command of `cabal` to execute `neorg-pandoc` and pa
   - @ordered :x:
   - @color :x:
   - @name :x:
-  - @table :x:
+  - @table :heavy_check_mark:  
   - @embed :heavy_check_mark: 
   - @code :heavy_check_mark:
   - @math :heavy_check_mark: 

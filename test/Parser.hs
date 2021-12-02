@@ -47,6 +47,28 @@ tagTests =
                       _documentVersion = Just "0.1"
                     }
                 )
+            ),
+      testCase "Table" $
+        parse
+          (tag @(FromList '["table"]))
+          "@table\n\
+          \This is a row | And another element of that row\n\
+          \This is a row on a new column | And another element of that row\n\
+          \-\n\
+          \The above line marks a delimiter |\n\
+          \@end"
+          @?= Just
+            ( SomeTag
+                (Proxy @"table")
+                ()
+                ( Table $
+                    V.fromList
+                      [ TableRowInlines $ V.fromList [ConcatInline $ V.fromList [Text "This", Space, Text "is", Space, Text "a", Space, Text "row"], ConcatInline $ V.fromList [Text "And", Space, Text "another", Space, Text "element", Space, Text "of", Space, Text "that", Space, Text "row"]],
+                        TableRowInlines $ V.fromList [ConcatInline $ V.fromList [Text "This", Space, Text "is", Space, Text "a", Space, Text "row", Space, Text "on", Space, Text "a", Space, Text "new", Space, Text "column"], ConcatInline $ V.fromList [Text "And", Space, Text "another", Space, Text "element", Space, Text "of", Space, Text "that", Space, Text "row"]],
+                        TableRowDelimiter,
+                        TableRowInlines $ V.fromList [ConcatInline $ V.fromList [Text "The", Space, Text "above", Space, Text "line", Space, Text "marks", Space, Text "a", Space, Text "delimiter"]]
+                      ]
+                )
             )
     ]
 

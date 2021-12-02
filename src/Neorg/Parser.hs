@@ -20,6 +20,7 @@ import Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
 import Data.Time (dayOfWeek, defaultTimeLocale, parseTimeM)
 import qualified Data.Vector as V
+import Data.Vector.Generic.Mutable (clear)
 import Data.Void
 import Debug.Trace
 import Neorg.Document
@@ -32,7 +33,6 @@ import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as P
 import Text.Megaparsec.Internal
-import Data.Vector.Generic.Mutable (clear)
 
 data ParserState = ParserState
   { _parserHeadingLevel :: IndentationLevel,
@@ -73,32 +73,32 @@ document = do
 
 blocks :: GenerateTagParser tags => Parser (Blocks tags)
 blocks = do
-  blocks <- P.many singleBlock
-  pure $ V.fromList blocks
+  blocks <- P.many $ singleBlock
+  pure $ V.fromList $ catMaybes blocks
 
-singleBlock :: GenerateTagParser tags => Parser (Block tags)
+singleBlock :: GenerateTagParser tags => Parser (Maybe (Block tags))
 singleBlock = do
   consumingTry $ do
     clearBlankSpace
     P.notFollowedBy P.eof
   P.lookAhead anyChar >>= \case
-    ' ' -> clearBlankSpace >> singleBlock
+    -- ' ' -> clearBlankSpace >> singleBlock
     c -> do
       s <- isSpecialLineStart
       if s
         then specialLineStart c
-        else Paragraph <$> paragraph >-> clearBlankSpace
+        else Just . Paragraph <$> paragraph
 
-specialLineStart :: GenerateTagParser tags => Char -> Parser (Block tags)
+specialLineStart :: GenerateTagParser tags => Char -> Parser (Maybe (Block tags))
 specialLineStart = \case
-  '*' -> Heading <$> heading
-  '-' -> List . TaskList <$> taskList I0 <|> List . UnorderedList <$> unorderedList I0 <|> weakDelimiter
-  '=' -> strongDelimiter
-  '>' -> Quote <$> quote
-  '~' -> List . OrderedList <$> orderedList I0
-  '_' -> horizonalLine $> HorizonalLine
-  '|' -> Marker <$> marker
-  '@' -> tag >>= maybe (clearBlankSpace >> singleBlock) (pure . Tag)
+  '*' -> pure . Heading <$> heading
+  '-' -> pure . List . TaskList <$> taskList I0 <|> pure . List . UnorderedList <$> unorderedList I0 <|> weakDelimiter $> Nothing
+  '=' -> strongDelimiter $> Nothing
+  '>' -> pure . Quote <$> quote
+  '~' -> pure . List . OrderedList <$> orderedList I0
+  '_' -> horizonalLine $> pure HorizonalLine
+  '|' -> pure . Marker <$> marker
+  '@' -> fmap Tag <$> tag
   _ -> fail "Not one of: Heading, Delimiter, Quote, List, Horizontal Line, Tag, Marker"
 
 isSpecialLineStart :: P.MonadParsec e Text p => p Bool
@@ -176,24 +176,27 @@ makeListParser minLevel c p f = do
     listBlock :: IndentationLevel -> Parser (V.Vector ListBlock)
     listBlock currentLevel = do
       par <- singleLineParagraph
-      subLists <- many $ P.try $ P.hspace >> lookChar >>= \case
-        '~' -> SubList . OrderedList <$> orderedList (succ currentLevel)
-        '-' -> SubList <$> (UnorderedList <$> unorderedList (succ currentLevel) <|> TaskList <$> taskList (succ currentLevel))
-        _ -> fail "no sublist left"
+      subLists <-
+        many $
+          P.try $
+            P.hspace >> lookChar >>= \case
+              '~' -> SubList . OrderedList <$> orderedList (succ currentLevel)
+              '-' -> SubList <$> (UnorderedList <$> unorderedList (succ currentLevel) <|> TaskList <$> taskList (succ currentLevel))
+              _ -> fail "no sublist left"
       pure $ V.fromList $ ListParagraph par : subLists
 
-weakDelimiter :: GenerateTagParser tags => Parser (Block tags)
+weakDelimiter :: Parser ()
 weakDelimiter = do
   level <- lift $ gets (view parserHeadingLevel)
   if level == I0
-    then P.try (repeating '-' >> P.hspace >> P.newline) >> lookChar >>= specialLineStart
+    then void $ P.try (repeating '-' >> P.hspace >> P.newline)
     else consumingTry $ P.try (repeating '-' >> P.hspace >> P.newline) >> lift (modify $ parserHeadingLevel %~ pred) >> fail "End current heading scope"
 
-strongDelimiter :: GenerateTagParser tags => Parser (Block tags)
+strongDelimiter :: Parser ()
 strongDelimiter = do
   level <- lift $ gets (view parserHeadingLevel)
   if level == I0
-    then P.try (repeating '=' >> P.hspace >> P.newline) >> lookChar >>= specialLineStart
+    then void $ P.try (repeating '=' >> P.hspace >> P.newline)
     else followedBy (repeating '=' >> P.hspace >> P.newline >> lift (modify $ parserHeadingLevel %~ pred)) >> fail "End current heading scope"
 
 quote :: Parser Quote
@@ -231,26 +234,24 @@ heading = do
       headingText <- singleLineParagraph
       pure (level, headingText)
 
-paragraph :: Parser Inline
-paragraph = do
-  fmap canonalizeInline . runInline $ do
-    modify $ delimitedActive .~ False
-    paragraph' $
-      doubleNewline
-        <|> P.try
-          ( do
-              gets (view delimitedActive) >>= guard
-              isSpecialLineStart >>= guard
-          )
+paragraph :: (MonadFail p, P.MonadParsec Void Text p) => p Inline
+paragraph = runInline $ do
+  modify $ delimitedActive .~ False
+  paragraph' $
+    doubleNewline
+      <|> P.try
+        ( do
+            gets (view delimitedActive) >>= guard
+            isSpecialLineStart >>= guard
+        )
 
-singleLineParagraph :: Parser Inline
-singleLineParagraph = do
-  fmap canonalizeInline . runInline $ do
-    modify $ delimitedActive .~ False
-    paragraph' (void P.newline)
+singleLineParagraph :: (MonadFail p, P.MonadParsec Void Text p) => p Inline
+singleLineParagraph = runInline $ do
+  modify $ delimitedActive .~ False
+  paragraph' (void P.newline)
 
-runInline :: StateT InlineState Parser () -> Parser Inline
-runInline p = do
+runInline :: P.MonadParsec e Text p => StateT InlineState p () -> p Inline
+runInline p = fmap canonalizeInline $ do
   (_, inlineState) <- runStateT p initialInlineState
   pure $ reduceModifierInline $ inlineState ^. modifierInline
   where
@@ -258,21 +259,21 @@ runInline p = do
     reduceModifierInline (NoModifier i) = i
     reduceModifierInline (OpenModifier c i b) = ConcatInline $ V.fromList [reduceModifierInline b, Text $ pack c, i]
 
-paragraph' :: StateT InlineState Parser () -> StateT InlineState Parser ()
+paragraph' :: forall p. (MonadFail p, P.MonadParsec Void Text p) => StateT InlineState p () -> StateT InlineState p ()
 paragraph' end' = do
   (end >> pure ())
     <|> (lookChar >>= \c -> openings c <|> word c)
   where
     end = do
       end' <|> P.eof
-    appendInlineToStack :: Inline -> StateT InlineState Parser ()
+    appendInlineToStack :: Inline -> StateT InlineState p ()
     appendInlineToStack t =
       modify $
         modifierInline %~ \case
           NoModifier i -> NoModifier $ i <> t
           OpenModifier c i b -> OpenModifier c (i <> t) b
 
-    openings :: Char -> StateT InlineState Parser ()
+    openings :: Char -> StateT InlineState p ()
     openings = \case
       '*' -> parseOpening "*"
       '/' -> parseOpening "/"
@@ -286,10 +287,10 @@ paragraph' end' = do
       -- '=' -> parseOpening TODO: Behavior unclear
       _ -> fail "No openings"
       where
-        parseTextModifier :: Text -> (Text -> Inline) -> StateT InlineState Parser ()
+        parseTextModifier :: Text -> (Text -> Inline) -> StateT InlineState p ()
         parseTextModifier char f = P.try (go "") <|> word (T.head char)
           where
-            go :: Text -> StateT InlineState Parser ()
+            go :: Text -> StateT InlineState p ()
             go previousText = do
               P.string char
               text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.head char && c /= '\n')
@@ -311,14 +312,14 @@ paragraph' end' = do
           modify (delimitedActive .~ False)
           withNextChar (\c -> P.choice [parNewline c, openings c, word c])
 
-    space :: Char -> StateT InlineState Parser ()
+    space :: Char -> StateT InlineState p ()
     space = \case
       ' ' -> do
         P.hspace >> appendInlineToStack Space
         withNextChar $ \c -> parNewline c <|> openings c <|> word c
       _ -> fail "No space"
 
-    closings :: Char -> StateT InlineState Parser ()
+    closings :: Char -> StateT InlineState p ()
     closings = \case
       '*' -> parseClosing "*" Bold
       '/' -> parseClosing "/" Italic
@@ -336,7 +337,7 @@ paragraph' end' = do
           modify (delimitedActive .~ False)
           withNextChar $ \c -> parNewline c <|> closings c <|> openings c <|> space c <|> punctuationOrModifier c
 
-        popStack :: String -> (Inline -> Inline) -> StateT InlineState Parser ()
+        popStack :: String -> (Inline -> Inline) -> StateT InlineState p ()
         popStack c f = do
           s <- gets (view modifierInline)
           new <- close s
@@ -348,7 +349,7 @@ paragraph' end' = do
                 (OpenModifier cd id bd) -> if c == cm then pure (OpenModifier cd (id <> f i) bd) else close (OpenModifier cd (id <> Text (pack cm) <> i) bd)
                 (NoModifier id) -> if c == cm then pure (NoModifier (id <> f i)) else fail "No closing"
 
-    word :: Char -> StateT InlineState Parser ()
+    word :: Char -> StateT InlineState p ()
     word c = do
       modify (delimitedActive .~ False)
       if S.member c (punctuationSymbols <> attachedModifierSymbols)
@@ -369,10 +370,10 @@ paragraph' end' = do
 
     specialSymbols = attachedModifierSymbols <> punctuationSymbols
 
-    withNextChar :: (Char -> StateT InlineState Parser ()) -> StateT InlineState Parser ()
+    withNextChar :: (Char -> StateT InlineState p ()) -> StateT InlineState p ()
     withNextChar f = end <|> (lookChar >>= f)
 
-    parNewline :: Char -> StateT InlineState Parser ()
+    parNewline :: Char -> StateT InlineState p ()
     parNewline = \case
       '~' -> do
         P.try (anyChar >> P.hspace >> P.newline)
@@ -482,9 +483,22 @@ instance ParseTagContent "document.meta" where
 
 instance ParseTagContent "table" where
   parseTagContent _ _ = do
-    pure undefined
+    rows <- manyV row
+    pure $ Table rows
     where
-      parseRow = do
-        P.hspace
-        cell <- singleLineParagraph
-        pure undefined
+      cell = P.notFollowedBy (P.eof <|> void P.newline) >> cellParagraph >-> P.hspace
+      row =
+        let inlines = do
+              P.hspace
+              cells <- manyV cell
+              P.newline
+              pure $ TableRowInlines cells
+            delimiter = do
+              P.char '-'
+              P.hspace
+              P.newline
+              pure TableRowDelimiter
+         in P.try delimiter <|> inlines
+      cellParagraph = runInline $ do
+        modify $ delimitedActive .~ False
+        paragraph' $ void (P.string " | ") <|> (P.try $ P.string " |" >> P.lookAhead (void P.newline <|> P.eof)) <|> void (P.lookAhead P.newline)
