@@ -9,18 +9,22 @@ import Control.Arrow (left)
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
+import Data.Bool (bool)
 import Data.Char (isLetter)
 import Data.Foldable (foldl')
 import Data.Functor
 import Data.Functor.Identity
+import Data.Maybe (catMaybes)
 import qualified Data.Set as S
 import Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
+import Data.Time (dayOfWeek, defaultTimeLocale, parseTimeM)
 import qualified Data.Vector as V
 import Data.Void
 import Debug.Trace
 import Neorg.Document
 import Neorg.Document.Tag (GenerateTagParser, parseTag)
+import Neorg.ParsingUtils (embedParser)
 import Optics.Core
 import Optics.TH
 import Text.Megaparsec (parseErrorPretty)
@@ -28,8 +32,7 @@ import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Char.Lexer as P
 import Text.Megaparsec.Internal
-import Data.Maybe (catMaybes)
-import Data.Time (parseTimeM, defaultTimeLocale)
+import Data.Vector.Generic.Mutable (clear)
 
 data ParserState = ParserState
   { _parserHeadingLevel :: IndentationLevel,
@@ -37,7 +40,7 @@ data ParserState = ParserState
   }
   deriving (Show)
 
-data InlineState = InlineState {_modifierInline :: ModifierInline, _singleLine :: Bool} deriving (Show)
+data InlineState = InlineState {_modifierInline :: ModifierInline, _delimitedActive :: Bool} deriving (Show)
 
 data ModifierInline = NoModifier Inline | OpenModifier String Inline ModifierInline deriving (Show)
 
@@ -70,17 +73,21 @@ document = do
 
 blocks :: GenerateTagParser tags => Parser (Blocks tags)
 blocks = do
-  clearBlankSpace
   blocks <- P.many singleBlock
   pure $ V.fromList blocks
 
 singleBlock :: GenerateTagParser tags => Parser (Block tags)
-singleBlock = specialBlock <|> Paragraph <$> paragraph >-> clearBlankSpace
-  where
-    specialBlock = do
-          P.lookAhead anyChar >>= \case
-            ' ' -> P.hspace >> singleBlock
-            c -> specialLineStart c
+singleBlock = do
+  consumingTry $ do
+    clearBlankSpace
+    P.notFollowedBy P.eof
+  P.lookAhead anyChar >>= \case
+    ' ' -> clearBlankSpace >> singleBlock
+    c -> do
+      s <- isSpecialLineStart
+      if s
+        then specialLineStart c
+        else Paragraph <$> paragraph >-> clearBlankSpace
 
 specialLineStart :: GenerateTagParser tags => Char -> Parser (Block tags)
 specialLineStart = \case
@@ -94,25 +101,27 @@ specialLineStart = \case
   '@' -> tag >>= maybe (clearBlankSpace >> singleBlock) (pure . Tag)
   _ -> fail "Not one of: Heading, Delimiter, Quote, List, Horizontal Line, Tag, Marker"
 
-failOnSpecialLineStart :: P.MonadParsec e Text p => p ()
-failOnSpecialLineStart =
-  lookChar >>= \case
-    '*' -> P.notFollowedBy (repeatingLevel '*' >> singleSpace)
-    '-' ->
-      P.notFollowedBy $
-        repeating '-' >>= \n ->
-          if
-              | n < 3 -> singleSpace
-              | n < 7 -> singleSpace <|> P.hspace >> void P.newline
-              | otherwise -> P.hspace >> void P.newline
-    '=' -> P.notFollowedBy (repeating '=' >> P.hspace >> P.newline)
-    '>' -> P.notFollowedBy (repeatingLevel '>' >> singleSpace)
-    '~' -> P.notFollowedBy (repeatingLevel '~' >> singleSpace)
-    '$' -> P.notFollowedBy (anyChar >> singleSpace)
-    '_' -> P.notFollowedBy (repeating '_' >>= guard . (> 2) >> P.hspace >> P.newline)
-    '|' -> P.notFollowedBy (P.char '|' >> singleSpace >> P.hspace >> textWord)
-    '@' -> P.notFollowedBy (void (P.string "@end") <|> (anyChar >> anyChar >>= guard . isLetter))
-    _ -> pure ()
+isSpecialLineStart :: P.MonadParsec e Text p => p Bool
+isSpecialLineStart = test $> False <|> pure True
+  where
+    test =
+      lookChar >>= \case
+        '*' -> P.notFollowedBy (repeatingLevel '*' >> singleSpace)
+        '-' ->
+          P.notFollowedBy $
+            repeating '-' >>= \n ->
+              if
+                  | n < 3 -> singleSpace
+                  | n < 7 -> singleSpace <|> P.hspace >> void P.newline
+                  | otherwise -> P.hspace >> void P.newline
+        '=' -> P.notFollowedBy (repeating '=' >> P.hspace >> P.newline)
+        '>' -> P.notFollowedBy (repeatingLevel '>' >> singleSpace)
+        '~' -> P.notFollowedBy (repeatingLevel '~' >> singleSpace)
+        '$' -> P.notFollowedBy (anyChar >> singleSpace)
+        '_' -> P.notFollowedBy (repeating '_' >>= guard . (> 2) >> P.hspace >> P.newline)
+        '|' -> P.notFollowedBy (P.char '|' >> singleSpace >> P.hspace >> textWord)
+        '@' -> P.notFollowedBy (void (P.string "@end") <|> (anyChar >> anyChar >>= guard . isLetter))
+        _ -> pure ()
 
 tag :: forall tags. GenerateTagParser tags => Parser (Maybe (SomeTag tags))
 tag = do
@@ -122,14 +131,15 @@ tag = do
     pure t
   P.hspace
   P.choice
-    [ P.eof >> pure Nothing, do
+    [ P.eof >> pure Nothing,
+      do
         let textContent =
               P.takeWhileP (Just "Tag content") (/= '@') >>= \t ->
                 (P.try (P.string "@end") >> pure t) <|> (P.char '@' >> fmap ((t <> T.pack ['@']) <>) textContent)
         content <- textContent
         case parseTag @tags tagName of
           Nothing -> pure Nothing
-          Just tagParser -> either (fail . P.errorBundlePretty) (pure . Just) $ P.runParser tagParser "Tag" content
+          Just tagParser -> Just <$> embedParser tagParser content
     ]
 
 horizonalLine :: Parser ()
@@ -154,23 +164,23 @@ taskList l = makeListParser l '-' (singleSpace >> parseTask) $ \l v -> TaskListC
 makeListParser :: IndentationLevel -> Char -> Parser a -> (IndentationLevel -> V.Vector (a, V.Vector ListBlock) -> l) -> Parser l
 makeListParser minLevel c p f = do
   (level, a) <- P.try $ repeatingLevel c >>= \l -> guard (minLevel <= l) >> p <&> (l,)
-  items1 <- manyV $ P.hspace >> listBlock level
+  items1 <- P.hspace >> listBlock level
   itemsN <- many $ listItem level
   pure $ f level $ V.fromList ((a, items1) : itemsN)
   where
     listItem level = do
       (_, a) <- P.try $ P.hspace >> repeatingLevel c >>= \l -> guard (level == l) >> p <&> (l,)
-      items <- many $ P.hspace >> listBlock level
-      pure (a, V.fromList items)
-    listBlock :: IndentationLevel -> Parser ListBlock
-    listBlock currentLevel =
-      ( P.lookAhead anyChar >>= \case
-          '~' -> SubList . OrderedList <$> orderedList (succ currentLevel)
-          '-' -> SubList <$> (UnorderedList <$> unorderedList (succ currentLevel) <|> TaskList <$> taskList (succ currentLevel))
-          _ -> ListParagraph <$> singleLineParagraph
-      )
-        <|> ListParagraph
-        <$> singleLineParagraph
+
+      items <- listBlock level
+      pure (a, items)
+    listBlock :: IndentationLevel -> Parser (V.Vector ListBlock)
+    listBlock currentLevel = do
+      par <- singleLineParagraph
+      subLists <- many $ P.try $ P.hspace >> lookChar >>= \case
+        '~' -> SubList . OrderedList <$> orderedList (succ currentLevel)
+        '-' -> SubList <$> (UnorderedList <$> unorderedList (succ currentLevel) <|> TaskList <$> taskList (succ currentLevel))
+        _ -> fail "no sublist left"
+      pure $ V.fromList $ ListParagraph par : subLists
 
 weakDelimiter :: GenerateTagParser tags => Parser (Block tags)
 weakDelimiter = do
@@ -204,7 +214,7 @@ localState f p =
   lift (get >-> modify f) >>= \s ->
     p >-> lift (put s)
 
-clearBlankSpace ::P.MonadParsec e Text p => p ()
+clearBlankSpace :: P.MonadParsec e Text p => p ()
 clearBlankSpace = void $ P.takeWhileP (Just "Clearing whitespace") (<= ' ')
 
 heading :: GenerateTagParser tags => Parser (Heading tags)
@@ -224,14 +234,20 @@ heading = do
 paragraph :: Parser Inline
 paragraph = do
   fmap canonalizeInline . runInline $ do
-    modify $ singleLine .~ False
-    paragraph'
+    modify $ delimitedActive .~ False
+    paragraph' $
+      doubleNewline
+        <|> P.try
+          ( do
+              gets (view delimitedActive) >>= guard
+              isSpecialLineStart >>= guard
+          )
 
 singleLineParagraph :: Parser Inline
 singleLineParagraph = do
   fmap canonalizeInline . runInline $ do
-    modify $ singleLine .~ True
-    paragraph'
+    modify $ delimitedActive .~ False
+    paragraph' (void P.newline)
 
 runInline :: StateT InlineState Parser () -> Parser Inline
 runInline p = do
@@ -242,11 +258,13 @@ runInline p = do
     reduceModifierInline (NoModifier i) = i
     reduceModifierInline (OpenModifier c i b) = ConcatInline $ V.fromList [reduceModifierInline b, Text $ pack c, i]
 
-paragraph' :: StateT InlineState Parser ()
-paragraph' = do
-  failOnSpecialLineStart
-  withNextChar $ \c -> openings c <|> word c
+paragraph' :: StateT InlineState Parser () -> StateT InlineState Parser ()
+paragraph' end' = do
+  (end >> pure ())
+    <|> (lookChar >>= \c -> openings c <|> word c)
   where
+    end = do
+      end' <|> P.eof
     appendInlineToStack :: Inline -> StateT InlineState Parser ()
     appendInlineToStack t =
       modify $
@@ -284,12 +302,13 @@ paragraph' = do
             stack@(OpenModifier cm i b) ->
               if not $ hasModifier c stack
                 then pure $ OpenModifier c mempty stack
-                else fail "No open modifier" -- OpenModifier cm (i <> Text (pack [c])) b
+                else fail "No open modifier"
           modify $ modifierInline .~ new
         parseOpening c = do
           P.try $ do
             anyChar >> withNextChar (\c -> guard $ isLetter c || S.member c specialSymbols)
             pushStack c
+          modify (delimitedActive .~ False)
           withNextChar (\c -> P.choice [parNewline c, openings c, word c])
 
     space :: Char -> StateT InlineState Parser ()
@@ -314,6 +333,7 @@ paragraph' = do
           P.try $ do
             anyChar >> followedBy (singleSpace <|> newline <|> withNextChar punctuationOrModifier)
             popStack c f
+          modify (delimitedActive .~ False)
           withNextChar $ \c -> parNewline c <|> closings c <|> openings c <|> space c <|> punctuationOrModifier c
 
         popStack :: String -> (Inline -> Inline) -> StateT InlineState Parser ()
@@ -329,24 +349,28 @@ paragraph' = do
                 (NoModifier id) -> if c == cm then pure (NoModifier (id <> f i)) else fail "No closing"
 
     word :: Char -> StateT InlineState Parser ()
-    word = \case
-      c ->
-        if
-            | S.member c (punctuationSymbols <> attachedModifierSymbols) -> do
+    word c = do
+      modify (delimitedActive .~ False)
+      if S.member c (punctuationSymbols <> attachedModifierSymbols)
+        then
+          ( do
               p <- lift anyChar <&> pack . (: [])
               appendInlineToStack (Text p)
               withNextChar $ \c -> space c <|> parNewline c <|> closings c <|> openings c <|> word c
-            | otherwise -> do
+          )
+        else
+          ( do
               w <- P.takeWhile1P (Just "Word") (\c -> c > ' ' && S.notMember c (punctuationSymbols <> attachedModifierSymbols))
               appendInlineToStack (Text w)
               withNextChar $ \c -> space c <|> parNewline c <|> closings c <|> word c
+          )
     punctuationSymbols = S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~"
     attachedModifierSymbols = S.fromList "*/_-^,|`$="
 
     specialSymbols = attachedModifierSymbols <> punctuationSymbols
 
     withNextChar :: (Char -> StateT InlineState Parser ()) -> StateT InlineState Parser ()
-    withNextChar f = P.eof <|> (lookChar >>= f)
+    withNextChar f = end <|> (lookChar >>= f)
 
     parNewline :: Char -> StateT InlineState Parser ()
     parNewline = \case
@@ -355,17 +379,18 @@ paragraph' = do
         next
       '\n' -> do
         newline
-        isSingleLine <- gets (view singleLine)
-        unless isSingleLine $ (failOnSpecialLineStart >> next) <|> pure ()
+        modify (delimitedActive .~ True)
+        next
       _ -> fail "No newline"
       where
         next = do
           P.hspace
-          let break c = guard (c == '\n' || c == '\r')
-          withNextChar (\c -> break c <|> openings c <|> word c)
+          withNextChar (\c -> openings c <|> word c)
     punctuationOrModifier c = do
       if S.member c (S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~" <> S.fromList "*/_-^,|`$=")
-        then anyChar >> withNextChar (\c -> space c <|> parNewline c <|> closings c <|> openings c <|> word c)
+        then do
+          modify (delimitedActive .~ False)
+          anyChar >> withNextChar (\c -> space c <|> parNewline c <|> closings c <|> openings c <|> word c)
         else fail ""
 
 many1 p = p >>= \a -> (a :) <$> many p
@@ -402,22 +427,22 @@ lookChar = followedBy anyChar
 anyChar :: P.MonadParsec e Text p => p Char
 anyChar = P.satisfy (const True)
 
+doubleNewline :: P.MonadParsec e Text p => p ()
+doubleNewline = P.try $ P.newline >> P.hspace >> void P.newline
+
 consumingTry :: ParsecT e s m a -> ParsecT e s m a
 consumingTry p = ParsecT $ \s cok _ eok eerr ->
   let eerr' err s' = eerr err s'
    in unParser p s cok eerr' eok eerr'
 {-# INLINE consumingTry #-}
 
+viewChar :: P.MonadParsec e Text p => p ()
+viewChar = do
+  !c <- traceShowId <$> lookChar
+  pure ()
+
 textWord :: P.MonadParsec e Text p => p Text
 textWord = P.takeWhile1P (Just "Text word") (\c -> c /= ' ' && c /= '\n' && c /= '\r')
-
--- mapParserState :: (s1 -> s2) -> Parser s1 a -> Parser s2 a
--- mapParserState f p1 = do
---   parserState <- getParserState
---   state <- lift get
---   let (s,r) = runIdentity $ runStateT (runParserT' p1 parserState) state
---   a <- ParsecT $ \_ _ handleError _ _ -> either handleError pure r
---   pure a
 
 instance ParseTagContent "code" where
   parseTagContent _ args = P.takeWhileP (Just "Code block") (const True)
@@ -430,7 +455,7 @@ instance ParseTagContent "comment" where
 
 instance ParseTagContent "embed" where
   parseTagContent _ args = case args of
-    "image" -> P.hspace >> P.takeWhile1P (Just "Url string") (>' ')
+    "image" -> P.hspace >> P.takeWhile1P (Just "Url string") (> ' ')
     a -> fail $ "I do not recognize the embed format " ++ show a
 
 instance ParseTagContent "document.meta" where
@@ -440,7 +465,7 @@ instance ParseTagContent "document.meta" where
     where
       makeDocumentMeta meta (field, value) = case field of
         "title" -> meta & documentTitle ?~ value
-        "description" -> meta & documentDescription ?~ value 
+        "description" -> meta & documentDescription ?~ value
         "author" -> meta & documentAuthor ?~ value
         "categories" -> meta & documentCategories .~ V.fromList (T.words value)
         "created" -> meta & documentCreated .~ parseTimeM True defaultTimeLocale "%Y-%-m-%-d" (unpack value)
@@ -455,3 +480,11 @@ instance ParseTagContent "document.meta" where
           "" -> pure Nothing
           _ -> pure $ Just (field, value)
 
+instance ParseTagContent "table" where
+  parseTagContent _ _ = do
+    pure undefined
+    where
+      parseRow = do
+        P.hspace
+        cell <- singleLineParagraph
+        pure undefined
