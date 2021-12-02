@@ -298,7 +298,9 @@ instance Tag "table" where
   type TagArguments "table" = ()
   type TagContent "table" = Table
 
-newtype Table = Table (V.Vector (V.Vector Inline)) deriving (Show, Eq)
+newtype Table = Table (V.Vector TableRow) deriving (Show, Eq)
+
+data TableRow = TableRowDelimiter | TableRowInlines (V.Vector Inline) deriving (Show, Eq)
 
 makeLenses ''Document
 makeLenses ''DocumentMeta
