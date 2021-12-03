@@ -1,12 +1,9 @@
 module Neorg where
 
 import Neorg.Document
+import Neorg.Document.Tag
+import Neorg.Parser
 
-import qualified Data.Text.IO as T
-import Data.Either
-
-import qualified Data.ByteString.Lazy as B
-import Text.Megaparsec (parse, errorBundlePretty)
 -- 
 -- 
 -- test :: IO ()
