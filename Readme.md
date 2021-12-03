@@ -34,7 +34,7 @@ Here, I have used the `neorg-pandoc-linux86` binary to transform my `norg` file 
 ## Implementation status
 
 - Attached Modifiers :heavy_check_mark: 
-- Intersecting modifiers :x: 
+- Intersecting modifiers :white_check_mark: 
 - Detached Modifiers :white_check_mark:
   - Heading :heavy_check_mark:
   - List :heavy_check_mark:
