@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+
 module Neorg.Parser where
 
 import Control.Applicative
@@ -14,7 +15,7 @@ import Data.Char (isLetter)
 import Data.Foldable (foldl')
 import Data.Functor
 import Data.Functor.Identity
-import Data.Maybe (catMaybes)
+import Data.Maybe ( catMaybes )
 import qualified Data.Set as S
 import Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
@@ -44,6 +45,7 @@ data InlineState = InlineState {_modifierInline :: ModifierInline, _delimitedAct
 
 data ModifierInline = NoModifier Inline | OpenModifier String Inline ModifierInline deriving (Show)
 
+hasModifier :: String -> ModifierInline -> Bool
 hasModifier c (NoModifier _) = False
 hasModifier c1 (OpenModifier c2 i b) = c1 == c2 || hasModifier c1 b
 
@@ -55,8 +57,10 @@ makeLenses ''InlineState
 
 makeLenses ''ModifierInline
 
+initialInlineState :: InlineState
 initialInlineState = InlineState (NoModifier (ConcatInline V.empty)) False
 
+defaultParserState :: ParserState
 defaultParserState = ParserState I0 emptyDocumentMeta
 
 parse :: GenerateTagParser tags => Text -> Text -> Either Text (Document tags)
