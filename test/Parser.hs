@@ -124,7 +124,16 @@ paragraphTests =
                 ( ConcatInline $
                     V.fromList [Text "Another", Space, Text "sentence."]
                 )
-            ]
+            ],
+      testCase "Single-Line intersecting Bold" $ parse singleLineParagraph ":*bold*:" @?= Bold (Text "bold"),
+      testCase "Single-Line intersecting Italic" $ parse singleLineParagraph ":/italic/:" @?= Italic (Text "italic"),
+      testCase "Single-Line intersecting Underline" $ parse singleLineParagraph ":_underline_:" @?= Underline (Text "underline"),
+      testCase "Single-Line intersecting Strikethrough" $ parse singleLineParagraph ":-strike-:" @?= Strikethrough (Text "strike"),
+      testCase "Single-Line intersecting Superscript" $ parse singleLineParagraph ":^super^:" @?= Superscript (Text "super"),
+      testCase "Single-Line intersecting Subscript" $ parse singleLineParagraph ":,sub,:" @?= Subscript (Text "sub"),
+      testCase "Single-Line intersecting Spoiler" $ parse singleLineParagraph ":|spoiler|:" @?= Spoiler (Text "spoiler"),
+      testCase "Single-Line intersecting Math" $ parse singleLineParagraph ":$math$:" @?= Math "math",
+      testCase "Single-Line intersecting Verbatim" $ parse singleLineParagraph ":`verbatim`:" @?= Verbatim "verbatim"
     ]
 
 markerTests :: TestTree
