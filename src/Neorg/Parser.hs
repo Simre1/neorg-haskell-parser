@@ -272,7 +272,7 @@ runInline p = fmap canonalizeInline $ do
 paragraph' :: forall p. (MonadFail p, P.MonadParsec Void Text p) => StateT InlineState p () -> StateT InlineState p ()
 paragraph' end' = do
   (end >> pure ())
-    <|> (lookChar >>= \c -> attachedOpenings c <|> word c)
+    <|> (lookChar >>= \c -> intersectingModifier c <|> attachedOpenings c <|> word c)
   where
     end = do
       end' <|> P.eof
@@ -289,20 +289,37 @@ paragraph' end' = do
       modify $ modifierInline .~ new
       where
         close (NoModifier b) = fail "No closing"
-        close (OpenModifier cm i b) =
+        close (OpenModifier cm i b) = 
           case b of
             (OpenModifier cd id bd) -> if c == cm then pure (OpenModifier cd (id <> f i) bd) else close (OpenModifier cd (id <> Text cm <> i) bd)
             (NoModifier id) -> if c == cm then pure (NoModifier (id <> f i)) else fail "No closing"
     pushStack :: Text -> StateT InlineState p ()
     pushStack c = do
       s <- gets (view modifierInline)
-      new <- case s of
+      new <-  case s of
         NoModifier i -> pure $ OpenModifier c mempty (NoModifier i)
         stack@(OpenModifier cm i b) ->
           if not $ hasModifier c stack
             then pure $ OpenModifier c mempty stack
             else fail "No open modifier"
       modify $ modifierInline .~ new
+
+    parseTextModifier :: StateT InlineState p () -> Text -> (Text -> Inline) -> StateT InlineState p ()
+    parseTextModifier follow char f = P.string char >> P.try (go "") <|> word (T.head char)
+      where
+        go :: Text -> StateT InlineState p ()
+        go previousText = do
+          text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.last char && c /= '\n')
+          let fullText = previousText <> text
+          ( do
+              P.string $ T.reverse char
+              followedBy follow
+              appendInlineToStack (f fullText)
+              modify (delimitedActive .~ False)
+              withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> word c
+            )
+            <|> (P.newline >> P.hspace >> P.newline >> fail "No Text modifier")
+            <|> (P.newline >> P.hspace >> go fullText)
 
     attachedOpenings :: Char -> StateT InlineState p ()
     attachedOpenings = \case
@@ -313,32 +330,15 @@ paragraph' end' = do
       ',' -> parseOpening ","
       '|' -> parseOpening "|"
       '^' -> parseOpening "^"
-      '`' -> parseTextModifier "`" Verbatim
-      '$' -> parseTextModifier "$" Math
+      '`' -> parseTextModifier follow "`" Verbatim
+      '$' -> parseTextModifier follow "$" Math
       -- '=' -> parseOpening TODO: Behavior unclear
       _ -> fail "No attachedOpenings"
       where
-        parseTextModifier :: Text -> (Text -> Inline) -> StateT InlineState p ()
-        parseTextModifier char f = P.try (go "") <|> word (T.head char)
-          where
-            go :: Text -> StateT InlineState p ()
-            go previousText = do
-              P.string char
-              text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.head char && c /= '\n')
-              let fullText = previousText <> text
-              ( do
-                  P.string char
-                  followedBy
-                    ( singleSpace <|> newline
-                        <|> withNextChar
-                          (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
-                    )
-                  appendInlineToStack (f fullText)
-                  modify (delimitedActive .~ False)
-                  withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> word c
-                )
-                <|> (P.newline >> P.hspace >> P.newline >> fail "No Text modifier")
-                <|> (P.newline >> P.hspace >> go fullText)
+        follow =
+          singleSpace <|> newline
+              <|> withNextChar
+                (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
         parseOpening c = do
           P.try $ do
             anyChar >> withNextChar (\c -> guard $ isLetter c || S.member c specialSymbols)
@@ -394,22 +394,54 @@ paragraph' end' = do
     withNextChar f = end <|> (lookChar >>= f)
 
     intersectingModifier :: Char -> StateT InlineState p ()
-    intersectingModifier = \case
-      _ -> fail "No intersecting modifier"
+    intersectingModifier c1 = do
+      c2 <- followedBy $ anyChar >> anyChar
+      case c1:[c2] of
+        ":*" -> intersectingOpen ":*"
+        ":/" -> intersectingOpen ":/"
+        ":_" -> intersectingOpen ":_"
+        ":-" -> intersectingOpen ":-"
+        ":^" -> intersectingOpen ":^"
+        ":," -> intersectingOpen ":,"
+        ":|" -> intersectingOpen ":|"
+        ":`" -> parseTextModifier (pure ()) ":`" Verbatim
+        ":$" -> parseTextModifier (pure ()) ":$" Math
+
+        "*:" -> intersectingClosed ":*" Bold
+        "/:" -> intersectingClosed ":/" Italic
+        "_:" -> intersectingClosed ":_" Underline
+        "-:" -> intersectingClosed ":-" Strikethrough
+        "^:" -> intersectingClosed ":^" Superscript
+        ",:" -> intersectingClosed ":," Subscript
+        "|:" -> intersectingClosed ":|" Spoiler
+        s -> fail "No intersecting modifier"
+      where
+        intersectingClosed mod f = do
+          P.string $ T.reverse mod
+          popStack mod f
+          next
+        intersectingOpen mod = do
+          P.string mod
+          pushStack mod
+          next
+        next = do
+          modify (delimitedActive .~ True)
+          withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> word c
 
     parWhitespace :: Char -> StateT InlineState p ()
-    parWhitespace = \case
-      ' ' -> do
-        appendInlineToStack Space
-        next
-      '~' -> do
-        P.try (anyChar >> P.hspace >> P.newline)
-        next
-      '\n' -> do
-        newline
-        modify (delimitedActive .~ True)
-        next
-      _ -> fail "No newline or space"
+    parWhitespace c =
+      intersectingModifier c <|> case c of
+        ' ' -> do
+          appendInlineToStack Space
+          next
+        '~' -> do
+          P.try (anyChar >> P.hspace >> P.newline)
+          next
+        '\n' -> do
+          newline
+          modify (delimitedActive .~ True)
+          next
+        _ -> fail "No newline or space"
       where
         next = do
           P.hspace
@@ -421,7 +453,8 @@ paragraph' end' = do
           anyChar >> withNextChar (\c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> word c)
         else fail ""
 
-many1 p = p >>= \a -> (a :) <$> many p
+many1 :: (Alternative f) => f a -> f [a]
+many1 p = (:) <$> p <*> many p
 
 manyV :: Alternative f => f a -> f (V.Vector a)
 manyV = fmap V.fromList . many
