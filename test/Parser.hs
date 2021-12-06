@@ -251,11 +251,10 @@ headingTests =
   testGroup
     "Heading tests"
     [ testCase "Heading" $
-        parse (heading @Empty) "* Heading"
+        parse heading "* Heading"
           @?= HeadingCons
             { _headingText = Text "Heading",
-              _headingLevel = I0,
-              _headingContent = V.empty
+              _headingLevel = I0
             },
       testCase "Equal Headings" $
         parse (blocks @Empty) "* Heading1\n* Heading2"
@@ -263,51 +262,48 @@ headingTests =
             [ Heading $
                 HeadingCons
                   { _headingText = Text "Heading1",
-                    _headingLevel = I0,
-                    _headingContent = V.empty
+                    _headingLevel = I0
                   },
+              Delimiter WeakDelimiter,
               Heading $
                 HeadingCons
                   { _headingText = Text "Heading2",
-                    _headingLevel = I0,
-                    _headingContent = V.empty
+                    _headingLevel = I0
                   }
             ],
       testCase "No Headings" $
         parse (blocks @Empty) "*Heading1"
           @?= V.singleton (Paragraph $ Text "*Heading1"),
       testCase "Nested Headings" $
-        parse (heading @Empty) "* Heading\n** SubHeading"
-          @?= HeadingCons
-            { _headingText = Text "Heading",
-              _headingLevel = I0,
-              _headingContent =
-                V.singleton
-                  ( Heading $
-                      HeadingCons
-                        { _headingText = Text "SubHeading",
-                          _headingLevel = I1,
-                          _headingContent = V.empty
-                        }
-                  )
-            },
+        parse (blocks @Empty) "* Heading\n** SubHeading"
+          @?= V.fromList
+            [ Heading $
+                HeadingCons
+                  { _headingText = Text "Heading",
+                    _headingLevel = I0
+                  },
+              Heading $
+                HeadingCons
+                  { _headingText = Text "SubHeading",
+                    _headingLevel = I1
+                  }
+            ],
       testCase "Headings with Paragraph" $
         parse (blocks @Empty) "* Heading1\nExample1\n* Heading2\nExample2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
                   { _headingText = Text "Heading1",
-                    _headingLevel = I0,
-                    _headingContent =
-                      V.singleton (Paragraph $ Text "Example1")
+                    _headingLevel = I0
                   },
+              Paragraph $ Text "Example1",
+              Delimiter WeakDelimiter,
               Heading $
                 HeadingCons
                   { _headingText = Text "Heading2",
-                    _headingLevel = I0,
-                    _headingContent =
-                      V.singleton (Paragraph $ Text "Example2")
-                  }
+                    _headingLevel = I0
+                  },
+              Paragraph $ Text "Example2"
             ],
       testCase "Weak delimiter" $
         parse (blocks @Empty) "* Heading1\n---\n** Heading2"
@@ -315,14 +311,14 @@ headingTests =
             [ Heading $
                 HeadingCons
                   { _headingText = Text "Heading1",
-                    _headingLevel = I0,
-                    _headingContent = V.empty
+                    _headingLevel = I0
                   },
+              Delimiter
+                WeakDelimiter,
               Heading $
                 HeadingCons
                   { _headingText = Text "Heading2",
-                    _headingLevel = I1,
-                    _headingContent = V.empty
+                    _headingLevel = I1
                   }
             ],
       testCase "Strong delimiter" $
@@ -331,14 +327,13 @@ headingTests =
             [ Heading $
                 HeadingCons
                   { _headingText = Text "Heading1",
-                    _headingLevel = I0,
-                    _headingContent = V.empty
+                    _headingLevel = I0
                   },
+              Delimiter StrongDelimiter,
               Heading $
                 HeadingCons
                   { _headingText = Text "Heading2",
-                    _headingLevel = I1,
-                    _headingContent = V.empty
+                    _headingLevel = I1
                   }
             ]
     ]

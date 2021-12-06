@@ -22,7 +22,7 @@ import Data.Char (isLetter)
 import Data.Foldable (foldl')
 import Data.Functor (($>), (<&>))
 import Data.Functor.Identity (Identity (runIdentity))
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, maybeToList)
 import qualified Data.Set as S
 import Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
@@ -78,15 +78,15 @@ parse fileName fileContent =
         P.runParserT document (unpack fileName) fileContent
 
 document :: GenerateTagParser tags => Parser (Document tags)
-document = do
+document =
   Document <$> blocks
 
 blocks :: GenerateTagParser tags => Parser (Blocks tags)
 blocks = do
   blocks <- P.many singleBlock
-  pure $ V.fromList $ catMaybes blocks
+  pure $ V.fromList $ mconcat blocks
 
-singleBlock :: GenerateTagParser tags => Parser (Maybe (Block tags))
+singleBlock :: GenerateTagParser tags => Parser [Block tags]
 singleBlock = do
   consumingTry $ do
     clearBlankSpace
@@ -97,18 +97,18 @@ singleBlock = do
       s <- isSpecialLineStart
       if s
         then specialLineStart c
-        else Just . Paragraph <$> paragraph
+        else pure . Paragraph <$> paragraph
 
-specialLineStart :: GenerateTagParser tags => Char -> Parser (Maybe (Block tags))
+specialLineStart :: GenerateTagParser tags => Char -> Parser [Block tags]
 specialLineStart = \case
-  '*' -> pure . Heading <$> heading
-  '-' -> pure . List . TaskList <$> taskList I0 <|> pure . List . UnorderedList <$> unorderedList I0 <|> weakDelimiter $> Nothing
-  '=' -> strongDelimiter $> Nothing
+  '*' -> headingWithDelimiter
+  '-' -> pure . List . TaskList <$> taskList I0 <|> pure . List . UnorderedList <$> unorderedList I0 <|> weakDelimiter $> [Delimiter WeakDelimiter]
+  '=' -> strongDelimiter $> [Delimiter StrongDelimiter]
   '>' -> pure . Quote <$> quote
   '~' -> pure . List . OrderedList <$> orderedList I0
-  '_' -> horizonalLine $> pure HorizonalLine
+  '_' -> horizonalLine $> pure (Delimiter HorizonalLine)
   '|' -> pure . Marker <$> marker
-  '@' -> fmap Tag <$> tag
+  '@' -> maybeToList . fmap Tag <$> tag
   _ -> fail "Not one of: Heading, Delimiter, Quote, List, Horizontal Line, Tag, Marker"
 
 isSpecialLineStart :: P.MonadParsec e Text p => p Bool
@@ -197,17 +197,13 @@ makeListParser minLevel c p f = do
 
 weakDelimiter :: Parser ()
 weakDelimiter = do
-  level <- lift $ gets (view parserHeadingLevel)
-  if level == I0
-    then void $ P.try (repeating '-' >> P.hspace >> P.newline)
-    else consumingTry $ P.try (repeating '-' >> P.hspace >> P.newline) >> lift (modify $ parserHeadingLevel %~ pred) >> fail "End current heading scope"
+  P.try (repeating '-' >> P.hspace >> P.newline)
+  lift $ modify $ parserHeadingLevel %~ pred
 
 strongDelimiter :: Parser ()
 strongDelimiter = do
-  level <- lift $ gets (view parserHeadingLevel)
-  if level == I0
-    then void $ P.try (repeating '=' >> P.hspace >> P.newline)
-    else followedBy (repeating '=' >> P.hspace >> P.newline >> lift (modify $ parserHeadingLevel %~ pred)) >> fail "End current heading scope"
+  P.try (repeating '=' >> P.hspace >> P.newline)
+  lift $ modify $ parserHeadingLevel .~ I0
 
 quote :: Parser Quote
 quote =
@@ -230,17 +226,27 @@ localState f p =
 clearBlankSpace :: P.MonadParsec e Text p => p ()
 clearBlankSpace = void $ P.takeWhileP (Just "Clearing whitespace") (<= ' ')
 
-heading :: GenerateTagParser tags => Parser (Heading tags)
+headingWithDelimiter :: GenerateTagParser tags => Parser [Block tags]
+headingWithDelimiter = do
+  currentLevel <- lift $ gets (view parserHeadingLevel)
+  h@(HeadingCons t headingLevel) <- heading
+  let delimiters = case (currentLevel, headingLevel) of
+        (I0, I0) -> []
+        (I1, I0) -> [Delimiter WeakDelimiter]
+        (_, I0) -> [Delimiter StrongDelimiter]
+        -- _ -> replicate (fromEnum currentLevel - fromEnum headingLevel) (Delimiter WeakDelimiter)
+        _ -> [Delimiter WeakDelimiter | currentLevel > headingLevel]
+  pure $ delimiters ++ [Heading h]
+
+heading :: Parser Heading
 heading = do
   (level, text) <- headingText
-  content <- localState (parserHeadingLevel %~ succ) blocks
-  pure $ HeadingCons text level content
+  lift $ modify $ parserHeadingLevel .~ succ level
+  pure $ HeadingCons text level
   where
     headingText = do
       level <- P.try $ do
-        level <- repeatingLevel '*' >-> singleSpace
-        lift (gets $ view parserHeadingLevel) >>= guard . (level >=)
-        pure level
+        repeatingLevel '*' >-> singleSpace
       headingText <- singleLineParagraph
       pure (level, headingText)
 
@@ -270,11 +276,11 @@ runInline p = fmap canonalizeInline $ do
     reduceModifierInline (OpenModifier c i b) = ConcatInline $ V.fromList [reduceModifierInline b, Text c, i]
 
 paragraph' :: forall p. (MonadFail p, P.MonadParsec Void Text p) => StateT InlineState p () -> StateT InlineState p ()
-paragraph' end' = do
+paragraph' end' =
   (end >> pure ())
     <|> (lookChar >>= \c -> intersectingModifier c <|> attachedOpenings c <|> word c)
   where
-    end = do
+    end =
       end' <|> P.eof
     appendInlineToStack :: Inline -> StateT InlineState p ()
     appendInlineToStack t =
@@ -309,7 +315,7 @@ paragraph' end' = do
       where
         go :: Text -> StateT InlineState p ()
         go previousText = do
-          text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.last char && c /= '\n')
+          text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.last char && c /= '\n' && c /= '\r')
           let fullText = previousText <> text
           ( do
               P.string $ T.reverse char
@@ -454,12 +460,16 @@ paragraph' end' = do
           newline
           modify (delimitedActive .~ True)
           next
-        _ -> fail "No newline or space"
+        '\r' -> do
+          newline
+          modify (delimitedActive .~ True)
+          next
+        c -> fail "No newline or space"
       where
         next = do
           P.hspace
           withNextChar (\c -> parWhitespace c <|> attachedOpenings c <|> word c)
-    punctuationOrModifier c = do
+    punctuationOrModifier c =
       if S.member c (S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~" <> S.fromList "*/_-^,|`$=")
         then do
           modify (delimitedActive .~ False)
@@ -504,6 +514,8 @@ anyChar = P.satisfy (const True)
 doubleNewline :: P.MonadParsec e Text p => p ()
 doubleNewline = P.try $ P.newline >> P.hspace >> void P.newline
 
+newline = P.newline <|> crlf
+
 consumingTry :: ParsecT e s m a -> ParsecT e s m a
 consumingTry p = ParsecT $ \s cok _ eok eerr ->
   let eerr' err s' = eerr err s'
@@ -546,9 +558,9 @@ instance ParseTagContent "document.meta" where
         "version" -> meta & documentVersion ?~ value
         _ -> meta
       metaItem = do
-        field <- P.takeWhileP (Just "meta item") (\c -> c /= ':' && c /= '\n')
+        field <- P.takeWhileP (Just "meta item") (\c -> c /= ':' && c /= '\n' && c /= '\n')
         P.char ':'
-        value <- T.strip <$> P.takeWhileP (Just "meta field") (/= '\n')
+        value <- T.strip <$> P.takeWhileP (Just "meta field") (\c -> c /= '\n' && c /= '\r')
         clearBlankSpace
         case value of
           "" -> pure Nothing
