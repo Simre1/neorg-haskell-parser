@@ -133,7 +133,8 @@ paragraphTests =
       testCase "Single-Line intersecting Subscript" $ parse singleLineParagraph ":,sub,:" @?= Subscript (Text "sub"),
       testCase "Single-Line intersecting Spoiler" $ parse singleLineParagraph ":|spoiler|:" @?= Spoiler (Text "spoiler"),
       testCase "Single-Line intersecting Math" $ parse singleLineParagraph ":$math$:" @?= Math "math",
-      testCase "Single-Line intersecting Verbatim" $ parse singleLineParagraph ":`verbatim`:" @?= Verbatim "verbatim"
+      testCase "Single-Line intersecting Verbatim" $ parse singleLineParagraph ":`verbatim`:" @?= Verbatim "verbatim",
+      testCase "Escape bold character" $ parse singleLineParagraph "\\*test*" @?= Text "*test*"
     ]
 
 markerTests :: TestTree
@@ -235,7 +236,14 @@ listTests =
                             V.singleton $ ListParagraph (Text "l2")
                           ]
                     }
-            ]
+            ],
+      testCase "Escaped list" $
+        parse (blocks @Empty) "\\- test1"
+          @?= V.singleton
+            ( Paragraph
+                ( ConcatInline $ V.fromList [Text "-", Space, Text "test1"]
+                )
+            )
     ]
 
 headingTests :: TestTree

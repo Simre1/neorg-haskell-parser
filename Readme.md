@@ -60,7 +60,7 @@ Here, I have used the `neorg-pandoc-linux86` binary to transform my `norg` file 
   - @image :x:
   - Custom :x:
 - Trailing modifiers :heavy_check_mark:
-- Escaping :x:
+- Escaping :heavy_check_mark:
 - Horizontal line :heavy_check_mark: 
 - Links :x:
 
