@@ -289,14 +289,14 @@ paragraph' end' = do
       modify $ modifierInline .~ new
       where
         close (NoModifier b) = fail "No closing"
-        close (OpenModifier cm i b) = 
+        close (OpenModifier cm i b) =
           case b of
             (OpenModifier cd id bd) -> if c == cm then pure (OpenModifier cd (id <> f i) bd) else close (OpenModifier cd (id <> Text cm <> i) bd)
             (NoModifier id) -> if c == cm then pure (NoModifier (id <> f i)) else fail "No closing"
     pushStack :: Text -> StateT InlineState p ()
     pushStack c = do
       s <- gets (view modifierInline)
-      new <-  case s of
+      new <- case s of
         NoModifier i -> pure $ OpenModifier c mempty (NoModifier i)
         stack@(OpenModifier cm i b) ->
           if not $ hasModifier c stack
@@ -337,8 +337,8 @@ paragraph' end' = do
       where
         follow =
           singleSpace <|> newline
-              <|> withNextChar
-                (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
+            <|> withNextChar
+              (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
         parseOpening c = do
           P.try $ do
             anyChar >> withNextChar (\c -> guard $ isLetter c || S.member c specialSymbols)
@@ -374,17 +374,31 @@ paragraph' end' = do
       modify (delimitedActive .~ False)
       if S.member c (punctuationSymbols <> attachedModifierSymbols)
         then
-          ( do
-              p <- lift anyChar <&> pack . (: [])
-              appendInlineToStack (Text p)
-              withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> word c
+          ( P.try
+              ( do
+                  guard (c == '\\')
+                  a <- anyChar >> anyChar
+                  guard (a > ' ')
+                  pure a
+              )
+              >>= \x -> do
+                appendInlineToStack
+                  (Text $ pack [x])
+                withNextChar $
+                  \c -> parWhitespace c <|> attachedClosings c <|> word c
           )
+            <|> ( do
+                    p <- lift anyChar <&> pack . (: [])
+                    appendInlineToStack (Text p)
+                    withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> word c
+                )
         else
           ( do
               w <- P.takeWhile1P (Just "Word") (\c -> c > ' ' && S.notMember c (punctuationSymbols <> attachedModifierSymbols))
               appendInlineToStack (Text w)
               withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> word c
           )
+
     punctuationSymbols = S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~"
     attachedModifierSymbols = S.fromList "*/_-^,|`$="
 
@@ -396,7 +410,7 @@ paragraph' end' = do
     intersectingModifier :: Char -> StateT InlineState p ()
     intersectingModifier c1 = do
       c2 <- followedBy $ anyChar >> anyChar
-      case c1:[c2] of
+      case c1 : [c2] of
         ":*" -> intersectingOpen ":*"
         ":/" -> intersectingOpen ":/"
         ":_" -> intersectingOpen ":_"
@@ -406,7 +420,6 @@ paragraph' end' = do
         ":|" -> intersectingOpen ":|"
         ":`" -> parseTextModifier (pure ()) ":`" Verbatim
         ":$" -> parseTextModifier (pure ()) ":$" Math
-
         "*:" -> intersectingClosed ":*" Bold
         "/:" -> intersectingClosed ":/" Italic
         "_:" -> intersectingClosed ":_" Underline
