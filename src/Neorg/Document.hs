@@ -33,6 +33,7 @@ data DocumentMeta = DocumentMeta
   }
   deriving (Show, Eq)
 
+emptyDocumentMeta :: DocumentMeta
 emptyDocumentMeta = DocumentMeta Nothing Nothing Nothing V.empty Nothing Nothing
 
 data IndentationLevel = I0 | I1 | I2 | I3 | I4 | I5 deriving (Eq, Ord, Bounded, Show)
@@ -57,10 +58,10 @@ indentationLevelToInt = fromEnum
 
 data Block (tags :: TypeSet)
   = Paragraph Inline
-  | Heading (Heading tags)
+  | Heading Heading
   | Quote Quote
   | List List
-  | HorizonalLine
+  | Delimiter Delimiter
   | Marker Marker
   | Tag (SomeTag tags)
   deriving (Show, Eq)
@@ -69,10 +70,11 @@ data Block (tags :: TypeSet)
 
 type Blocks tags = V.Vector (Block tags)
 
-data Heading (tags :: TypeSet) = HeadingCons
+data Delimiter = HorizonalLine | WeakDelimiter | StrongDelimiter deriving (Show, Eq)
+
+data Heading = HeadingCons
   { _headingText :: Inline,
-    _headingLevel :: IndentationLevel,
-    _headingContent :: Blocks tags
+    _headingLevel :: IndentationLevel
   }
   deriving (Show, Eq)
 

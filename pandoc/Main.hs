@@ -45,7 +45,7 @@ convertBlock handler = \case
   Heading heading -> convertHeading handler heading
   Quote quote -> convertQuote quote
   List list -> convertList list
-  HorizonalLine -> convertHorizonalLine
+  Delimiter delimiter -> convertDelimiter delimiter
   Marker marker -> convertMarker marker
   Tag tag -> handleSomeTag handler tag
 
@@ -71,6 +71,7 @@ convertList = \case
           traverse (\(taskStatus, items) -> applicativeConcatMap (convertTaskListBlock taskStatus) items) $
             tl ^. tListItems
 
+
 convertQuote :: Quote -> Convert P.Blocks
 convertQuote quote = P.blockQuote . P.para <$> convertInline (quote ^. quoteContent)
 
@@ -79,15 +80,15 @@ convertListBlock = \case
   ListParagraph i -> P.para <$> convertInline i
   SubList l -> convertList l
 
-convertHeading :: TagHandler tags (Convert P.Blocks) -> Heading tags -> Convert P.Blocks
+convertHeading :: TagHandler tags (Convert P.Blocks) -> Heading -> Convert P.Blocks
 convertHeading handler heading = do
   text <- convertInline $ heading ^. headingText
-  let header = P.header (succ . fromEnum $ heading ^. headingLevel) text
-  subBlocks <- applicativeConcatMap (convertBlock handler) (heading ^. headingContent)
-  pure $ header <> subBlocks
+  pure $ P.header (succ . fromEnum $ heading ^. headingLevel) text
 
-convertHorizonalLine :: Convert P.Blocks
-convertHorizonalLine = pure P.horizontalRule
+convertDelimiter :: Delimiter -> Convert P.Blocks
+convertDelimiter delimiter = case delimiter of
+  HorizonalLine -> pure P.horizontalRule
+  _ -> pure mempty
 
 convertInline :: Inline -> Convert P.Inlines
 convertInline = \case
