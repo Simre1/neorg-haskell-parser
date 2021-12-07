@@ -6,7 +6,7 @@ Neorg Haskell Parser aims to be a complete implementation of the [Neorg markup s
 
 ### Using a precompiled binary
 
-I have added a compiled binary for linux in the `release` folder, which should work on most x86 linux systems.
+I have added a compiled binary for linux in the [releases section of github](https://github.com/Simre1/neorg-haskell-parser/releases), which should work on most x86 linux systems.
 
 ### Building from Source
 
