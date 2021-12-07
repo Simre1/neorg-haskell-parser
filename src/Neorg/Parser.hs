@@ -122,13 +122,13 @@ isSpecialLineStart = test $> False <|> pure True
             repeating '-' >>= \n ->
               if
                   | n < 3 -> singleSpace
-                  | n < 7 -> singleSpace <|> P.hspace >> void P.newline
-                  | otherwise -> P.hspace >> void P.newline
-        '=' -> P.notFollowedBy (repeating '=' >> P.hspace >> P.newline)
+                  | n < 7 -> singleSpace <|> P.hspace >> void newline
+                  | otherwise -> P.hspace >> void newline
+        '=' -> P.notFollowedBy (repeating '=' >> P.hspace >> newline)
         '>' -> P.notFollowedBy (repeatingLevel '>' >> singleSpace)
         '~' -> P.notFollowedBy (repeatingLevel '~' >> singleSpace)
         '$' -> P.notFollowedBy (anyChar >> singleSpace)
-        '_' -> P.notFollowedBy (repeating '_' >>= guard . (> 2) >> P.hspace >> P.newline)
+        '_' -> P.notFollowedBy (repeating '_' >>= guard . (> 2) >> P.hspace >> newline)
         '|' -> P.notFollowedBy (P.char '|' >> singleSpace >> P.hspace >> textWord)
         '@' -> P.notFollowedBy (void (P.string "@end") <|> (anyChar >> anyChar >>= guard . isLetter))
         _ -> pure ()
@@ -153,7 +153,7 @@ tag = do
     ]
 
 horizonalLine :: Parser ()
-horizonalLine = P.try $ repeating '_' >>= guard . (> 2) >> P.hspace >> newline
+horizonalLine = P.try $ repeating '_' >>= guard . (> 2) >> P.hspace >> lNewline
 
 unorderedList :: IndentationLevel -> Parser UnorderedList
 unorderedList l = makeListParser l '-' singleSpace $ \l v -> UnorderedListCons {_uListLevel = l, _uListItems = fmap snd v}
@@ -197,12 +197,12 @@ makeListParser minLevel c p f = do
 
 weakDelimiter :: Parser ()
 weakDelimiter = do
-  P.try (repeating '-' >> P.hspace >> P.newline)
+  P.try (repeating '-' >> P.hspace >> newline)
   lift $ modify $ parserHeadingLevel %~ pred
 
 strongDelimiter :: Parser ()
 strongDelimiter = do
-  P.try (repeating '=' >> P.hspace >> P.newline)
+  P.try (repeating '=' >> P.hspace >> newline)
   lift $ modify $ parserHeadingLevel .~ I0
 
 quote :: Parser Quote
@@ -264,7 +264,7 @@ paragraph = runInline $ do
 singleLineParagraph :: (MonadFail p, P.MonadParsec Void Text p) => p Inline
 singleLineParagraph = runInline $ do
   modify $ delimitedActive .~ False
-  paragraph' (void P.newline)
+  paragraph' (void newline)
 
 runInline :: P.MonadParsec e Text p => StateT InlineState p () -> p Inline
 runInline p = fmap canonalizeInline $ do
@@ -324,8 +324,8 @@ paragraph' end' =
               modify (delimitedActive .~ False)
               withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> word c
             )
-            <|> (P.newline >> P.hspace >> P.newline >> fail "No Text modifier")
-            <|> (P.newline >> P.hspace >> go fullText)
+            <|> (newline >> P.hspace >> newline >> fail "No Text modifier")
+            <|> (newline >> P.hspace >> go fullText)
 
     attachedOpenings :: Char -> StateT InlineState p ()
     attachedOpenings = \case
@@ -342,7 +342,7 @@ paragraph' end' =
       _ -> fail "No attachedOpenings"
       where
         follow =
-          singleSpace <|> newline
+          singleSpace <|> lNewline
             <|> withNextChar
               (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
         parseOpening c = do
@@ -367,7 +367,7 @@ paragraph' end' =
           P.try $ do
             P.string c
               >> followedBy
-                ( singleSpace <|> newline
+                ( singleSpace <|> lNewline
                     <|> withNextChar
                       (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
                 )
@@ -454,14 +454,14 @@ paragraph' end' =
           appendInlineToStack Space
           next
         '~' -> do
-          P.try (anyChar >> P.hspace >> P.newline)
+          P.try (anyChar >> P.hspace >> newline)
           next
         '\n' -> do
-          newline
+          lNewline
           modify (delimitedActive .~ True)
           next
         '\r' -> do
-          newline
+          lNewline
           modify (delimitedActive .~ True)
           next
         c -> fail "No newline or space"
@@ -482,8 +482,11 @@ many1 p = (:) <$> p <*> many p
 manyV :: Alternative f => f a -> f (V.Vector a)
 manyV = fmap V.fromList . many
 
+lNewline :: P.MonadParsec e Text p => p ()
+lNewline = (newline >> P.hspace) <|> P.eof
+
 newline :: P.MonadParsec e Text p => p ()
-newline = (P.newline >> P.hspace) <|> P.eof
+newline = void P.newline <|> void P.crlf
 
 followedBy :: P.MonadParsec e s p => p a -> p a
 followedBy = P.try . P.lookAhead
@@ -512,9 +515,9 @@ anyChar :: P.MonadParsec e Text p => p Char
 anyChar = P.satisfy (const True)
 
 doubleNewline :: P.MonadParsec e Text p => p ()
-doubleNewline = P.try $ P.newline >> P.hspace >> void P.newline
+doubleNewline = P.try $ newline >> P.hspace >> void newline
 
-newline = P.newline <|> crlf
+-- newline = newline <|> crlf
 
 consumingTry :: ParsecT e s m a -> ParsecT e s m a
 consumingTry p = ParsecT $ \s cok _ eok eerr ->
@@ -571,17 +574,17 @@ instance ParseTagContent "table" where
     rows <- manyV row
     pure $ Table rows
     where
-      cell = P.notFollowedBy (P.eof <|> void P.newline) >> cellParagraph >-> P.hspace
+      cell = P.notFollowedBy (P.eof <|> void newline) >> cellParagraph >-> P.hspace
       row =
         let inlines = do
               P.hspace
               cells <- manyV cell
-              P.newline
+              newline
               pure $ TableRowInlines cells
             delimiter = do
               P.char '-'
               P.hspace
-              P.newline
+              newline
               pure TableRowDelimiter
          in P.try delimiter <|> inlines
       cellParagraph = runInline $ do
@@ -589,5 +592,5 @@ instance ParseTagContent "table" where
         paragraph' $
           void (P.string " | ")
             <|> P.try
-              (P.string " |" >> P.lookAhead (void P.newline <|> P.eof))
-            <|> void (P.lookAhead P.newline)
+              (P.string " |" >> P.lookAhead (void newline <|> P.eof))
+            <|> void (P.lookAhead newline)
