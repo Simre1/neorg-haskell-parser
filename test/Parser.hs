@@ -1,14 +1,17 @@
 module Parser where
 
-import Control.Monad.Trans.State
+import Control.Monad.Trans.State (evalState)
 import Data.Data (Proxy (..))
-import Data.Text
+import Data.Text (Text)
 import Data.Time (defaultTimeLocale, parseTimeM)
 import qualified Data.Vector as V
 import Neorg.Document
-import Neorg.Parser hiding (parse)
-import Test.Tasty
-import Test.Tasty.HUnit
+import Neorg.Parser.Block
+import Neorg.Parser.Main hiding (parse)
+import Neorg.Parser.Paragraph
+import Neorg.Parser.Types
+import Test.Tasty ( testGroup, TestTree )
+import Test.Tasty.HUnit ( testCase, (@?=) )
 import qualified Text.Megaparsec as P
 import Type.Set (FromList, TypeSet (Empty))
 

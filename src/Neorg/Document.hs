@@ -4,22 +4,20 @@ module Neorg.Document where
 
 import Data.Data (Proxy)
 import qualified Data.Map as M
+import Data.Maybe (isJust)
 import Data.Text (pack)
 import Data.Text as T (Text, unwords)
 import Data.Time.Calendar (Day, showGregorian)
 import qualified Data.Vector as V
-import Debug.Trace
-import Optics.Core
-import Optics.TH
 import Data.Void (Void)
+import GHC.TypeLits (KnownSymbol, Symbol, sameSymbol, symbolVal)
+import Optics.TH (makeLenses)
 import qualified Text.Megaparsec as P
+import Type.Set (TypeSet)
 import Unsafe.Coerce (unsafeCoerce)
-import GHC.TypeLits (Symbol, symbolVal, sameSymbol, KnownSymbol)
-import Data.Maybe
-import Type.Set
 
-data Document (tags :: TypeSet) = Document
-  { _documentBlocks :: Blocks tags 
+newtype Document (tags :: TypeSet) = Document
+  { _documentBlocks :: Blocks tags
   }
   deriving (Show, Eq)
 
@@ -141,7 +139,7 @@ data Inline
   deriving (Show, Eq)
 
 instance Semigroup Inline where
-  i1 <> i2 = ConcatInline $ V.fromList [i1,i2]
+  i1 <> i2 = ConcatInline $ V.fromList [i1, i2]
 
 instance Monoid Inline where
   mempty = ConcatInline V.empty
@@ -158,104 +156,23 @@ canonalizeInline = \case
     processInlinesV = processInlines . V.toList
     processInlines :: [Inline] -> [Inline]
     processInlines = \case
-        (Text t1 : x : r) -> case canonalizeInline x of
-          (Text t2) -> processInlines $ Text (t1 <> t2) : r
-          c -> Text t1 : processInlines (c : r)
-        (Text t1 : r) -> Text t1 : processInlines r
-        -- (ConcatInline is1 : ConcatInline is2 : r) -> processInlinesV (is1 <> is2) <> processInlines r
-        (ConcatInline is1 : r) -> processInlines $ V.toList is1 <> r
-        (Bold i : r) -> Bold (canonalizeInline i) : processInlines r
-        (Italic i : r) -> Italic (canonalizeInline i) : processInlines r
-        (Underline i : r) -> Underline (canonalizeInline i) : processInlines r
-        (Strikethrough i : r) -> Strikethrough (canonalizeInline i) : processInlines r
-        (Superscript i : r) -> Superscript (canonalizeInline i) : processInlines r
-        (Subscript i : r) -> Subscript (canonalizeInline i) : processInlines r
-        (Spoiler i : r) -> Spoiler (canonalizeInline i) : processInlines r
-        (Math t : r) -> Math t : processInlines r
-        (Verbatim t : r) -> Verbatim t : processInlines r
-        (Link t i : r) -> Link t (canonalizeInline i) : processInlines r
-        (Space : r) -> Space : processInlines r
-        [] -> []
-      
-
-      -- V.fromList
-      --   . V.foldr
-      --     ( \i b -> case (i, b) of
-      --         (Text t1, x : r) -> case canonalizeInline x of
-      --           (Text t2) -> Text (t1 <> t2) : r
-      --           c -> Text t1 : c : r
-      --         (Text t, r) -> Text t : r
-
-      --     )
-      --     []
-
--- prettyInline :: Inline -> Text
--- prettyInline = \case
---   Text t -> t
---   Bold i -> pack ['*'] <> prettyInline i <> pack ['*']
---   Italic i -> pack ['/'] <> prettyInline i <> pack ['/']
---   Underline i -> pack ['_'] <> prettyInline i <> pack ['_']
---   StrikeThrough i -> pack ['-'] <> prettyInline i <> pack ['-']
---   Superscript i -> pack ['^'] <> prettyInline i <> pack ['^']
---   Subscript i -> pack [','] <> prettyInline i <> pack [',']
---   Spoiler i -> pack ['|'] <> prettyInline i <> pack ['|']
---   ConcatInline i -> V.foldMap prettyInline i
---   Link t i -> undefined
---
--- renderDocument :: Document -> Text
--- renderDocument = toStrict . toLazyText . renderDocument
---   where
---     renderDocument :: Document -> Builder
---     renderDocument (Document blocks meta) = renderMeta meta <> newline <> V.foldMap (\block -> renderBlock block <> newline) blocks
---     renderBlock :: Block -> Builder
---     renderBlock = \case
---       Paragraph inline -> renderInline inline <> newline
---       Heading heading -> renderHeading heading
---       -- List list -> renderList list
---       Quote quote -> renderQuote quote
---     renderMeta :: DocumentMeta -> Builder
---     renderMeta (DocumentMeta title description author categories created version) =
---       "@document.meta" <> newline
---         <> maybe mempty ((<> newline) . ("  title: " <>) . fromText) title
---         <> maybe mempty ((<> newline) . ("  description: " <>) . fromText) description
---         <> maybe mempty ((<> newline) . ("  author: " <>) . fromText) author
---         <> ( if V.length categories > 0
---                then "  categories: " <> (fromText . T.unwords . V.toList) categories <> newline
---                else mempty
---            )
---         <> maybe mempty ((<> newline) . ("  created: " <>) . fromString . showGregorian) created
---         <> maybe mempty ((<> newline) . ("  version: " <>) . fromText) version
---         <> "@end"
---         <> newline
---     renderBlocks :: Blocks -> Builder
---     renderBlocks = V.foldMap renderBlock
---     renderQuote :: Quote -> Builder
---     renderQuote (QuoteCons level content) = levelToChars '>' level <> " " <> renderInline content
---     renderInline :: Inline -> Builder
---     renderInline = \case
---       Text text -> fromText text
---       ConcatInline inlines -> V.foldMap renderInline inlines
---       Bold inline -> "*" <> renderInline inline <> "*"
---       Italic inline -> "/" <> renderInline inline <> "/"
---     renderHeading :: Heading -> Builder
---     renderHeading (HeadingCons headingText headingLevel headingContent) =
---       levelToChars '*' headingLevel <> "H " <> renderInline headingText <> newline <> renderBlocks headingContent <> "---" <> newline
-    -- renderList :: List order -> Builder
-    -- renderList (ListCons listLevel listOrder listItems) =
-    --   flip V.foldMap listItems $ \blocks ->
-    --     levelToChars '-' listLevel <> "L " <> renderBlocks (listBlockToBlock <$> blocks)
-    -- newline :: Builder
-    -- newline = "\n"
-    -- levelToChars :: Char -> IndentationLevel -> Builder
-    -- levelToChars char level = case level of
-    --   I0 -> singleton char
-    --   I1 -> fromString $ replicate 2 char
-    --   I2 -> fromString $ replicate 3 char
-    --   I3 -> fromString $ replicate 4 char
-    --   I4 -> fromString $ replicate 5 char
-    --   I5 -> fromString $ replicate 6 char
-  -- contentParser :: f a -> TagArguments a -> P.Parser (TagContent a)
---
+      (Text t1 : x : r) -> case canonalizeInline x of
+        (Text t2) -> processInlines $ Text (t1 <> t2) : r
+        c -> Text t1 : processInlines (c : r)
+      (Text t1 : r) -> Text t1 : processInlines r
+      (ConcatInline is1 : r) -> processInlines $ V.toList is1 <> r
+      (Bold i : r) -> Bold (canonalizeInline i) : processInlines r
+      (Italic i : r) -> Italic (canonalizeInline i) : processInlines r
+      (Underline i : r) -> Underline (canonalizeInline i) : processInlines r
+      (Strikethrough i : r) -> Strikethrough (canonalizeInline i) : processInlines r
+      (Superscript i : r) -> Superscript (canonalizeInline i) : processInlines r
+      (Subscript i : r) -> Subscript (canonalizeInline i) : processInlines r
+      (Spoiler i : r) -> Spoiler (canonalizeInline i) : processInlines r
+      (Math t : r) -> Math t : processInlines r
+      (Verbatim t : r) -> Verbatim t : processInlines r
+      (Link t i : r) -> Link t (canonalizeInline i) : processInlines r
+      (Space : r) -> Space : processInlines r
+      [] -> []
 
 type TagParser = P.Parsec Void Text
 
@@ -273,7 +190,7 @@ instance Show (SomeTag tags) where
   show (SomeTag tag args content) = show (symbolVal tag, args, content)
 
 instance Eq (SomeTag tags) where
-  (SomeTag p1 args1 content1) == (SomeTag p2 args2 content2) = 
+  (SomeTag p1 args1 content1) == (SomeTag p2 args2 content2) =
     isJust (p1 `sameSymbol` p2) && args1 == unsafeCoerce args2 && content1 == unsafeCoerce content2
 
 instance Tag "code" where
@@ -304,6 +221,10 @@ newtype Table = Table (V.Vector TableRow) deriving (Show, Eq)
 
 data TableRow = TableRowDelimiter | TableRowInlines (V.Vector Inline) deriving (Show, Eq)
 
+instance Tag "ordered" where
+  type TagArguments "ordered" = (Maybe Int, Maybe Int, Maybe Int)
+  type TagContent "ordered" = OrderedList
+
 makeLenses ''Document
 makeLenses ''DocumentMeta
 makeLenses ''Heading
@@ -312,5 +233,3 @@ makeLenses ''Marker
 makeLenses ''UnorderedList
 makeLenses ''OrderedList
 makeLenses ''TaskList
-
-

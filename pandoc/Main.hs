@@ -13,7 +13,7 @@ import qualified Data.Vector as V
 import Debug.Trace
 import Neorg.Document
 import Neorg.Document.Tag
-import Neorg.Parser
+import Neorg.Parser.Main
 import Optics.Core
 import System.Environment (getArgs)
 import qualified Text.Pandoc.Builder as P

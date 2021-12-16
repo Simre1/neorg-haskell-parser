@@ -2,19 +2,19 @@
 
 module Neorg.Document.Tag where
 
-import Data.Data
+import Control.Applicative (Alternative ((<|>)))
+import Data.Data (Proxy (..))
+import Data.Functor ((<&>))
 import qualified Data.Map as M
 import qualified Data.Text as T
-import Neorg.Document
-import Data.Functor ((<&>))
-import GHC.TypeLits (Symbol, symbolVal)
-import Control.Applicative
-import Type.Set
-import Unsafe.Coerce (unsafeCoerce)
 import Data.Void (Void)
+import Debug.Trace (traceShow)
+import GHC.TypeLits (Symbol, symbolVal)
+import Neorg.Document
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
-import Debug.Trace (traceShow)
+import Type.Set (FromList, Merge, TypeSet (..))
+import Unsafe.Coerce (unsafeCoerce)
 
 newtype ParseTag
   = ParseTag
@@ -43,9 +43,11 @@ instance (GenerateTagParser r, GenerateTagParser l, ParseTagContent a, Tag a, Pa
         pure $ f tag arguments content
 
 parseTag :: forall tags. GenerateTagParser tags => T.Text -> Maybe (TagParser (SomeTag tags))
-parseTag t = M.lookup t tagMap <&> \case
-  ParseTag f -> f SomeTag
-  where tagMap = generateTagParser (Proxy @tags)
+parseTag t =
+  M.lookup t tagMap <&> \case
+    ParseTag f -> f SomeTag
+  where
+    tagMap = generateTagParser (Proxy @tags)
 
 newtype Function r = Function (forall a. Proxy a -> TagArguments a -> TagContent a -> r)
 
@@ -62,9 +64,9 @@ mergeHandler :: TagHandler tags1 r -> TagHandler tags2 r -> TagHandler (Merge ta
 mergeHandler (TagHandler tags1) (TagHandler tags2) = TagHandler $ M.union tags1 tags2
 
 handleSomeTag :: TagHandler tags r -> SomeTag tags -> r
-handleSomeTag (TagHandler handlers) (SomeTag p args content) = 
+handleSomeTag (TagHandler handlers) (SomeTag p args content) =
   let (Function f) = handlers M.! T.pack (symbolVal p)
-  in f p args content
+   in f p args content
 
 runTagParser :: TagParser a -> T.Text -> Either (P.ParseErrorBundle T.Text Void) a
 runTagParser parser = P.runParser parser "Tag"
@@ -73,7 +75,7 @@ class ParseTagArguments a where
   parseTagArguments :: f a -> TagParser a
 
 instance ParseTagArguments T.Text where
-  parseTagArguments _ = P.takeWhile1P (Just "Text tag argument") (>' ')
+  parseTagArguments _ = P.takeWhile1P (Just "Text tag argument") (> ' ')
 
 instance ParseTagArguments a => ParseTagArguments (Maybe a) where
   parseTagArguments _ = Just <$> parseTagArguments (Proxy @a) <|> pure Nothing
