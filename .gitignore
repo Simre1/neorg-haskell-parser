@@ -22,6 +22,7 @@ cabal.project.local~
 .HTF/
 .ghc.environment.*
 old
-release
-no_upload
-testing
+release/
+no_upload/
+testing/
+tree-sitter-norg/

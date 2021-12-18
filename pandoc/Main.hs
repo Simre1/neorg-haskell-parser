@@ -11,6 +11,7 @@ import qualified Data.Text.IO as T
 import qualified Data.Vector as V
 import Neorg.Document
 import Neorg.Document.Tag
+import Neorg.Parser.Block (definition)
 import Neorg.Parser.Main
 import Optics.Core ((<&>), (^.))
 import System.Environment (getArgs)
@@ -43,6 +44,7 @@ convertBlock handler = \case
   Delimiter delimiter -> convertDelimiter delimiter
   Marker marker -> convertMarker marker
   PureBlock pb -> convertPureBlock handler pb
+  Definition definition -> convertDefinition handler definition
 
 convertPureBlock :: TagHandler tags (Convert P.Blocks) -> PureBlock tags -> Convert P.Blocks
 convertPureBlock handler = \case
@@ -85,6 +87,12 @@ convertHeading :: TagHandler tags (Convert P.Blocks) -> Heading -> Convert P.Blo
 convertHeading handler heading = do
   text <- convertInline $ heading ^. headingText
   pure $ P.header (succ . fromEnum $ heading ^. headingLevel) text
+
+convertDefinition :: TagHandler tags (Convert P.Blocks) -> Definition tags -> Convert P.Blocks
+convertDefinition handler definition = do
+  definitionText <- convertInline $ definition ^. definitionObject
+  definitionBlocks <- traverse (convertPureBlock handler) $ definition ^. definitionContent
+  pure $ P.definitionList [(definitionText, V.toList definitionBlocks)]
 
 convertDelimiter :: Delimiter -> Convert P.Blocks
 convertDelimiter delimiter = case delimiter of

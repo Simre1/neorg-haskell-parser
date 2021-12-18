@@ -230,3 +230,4 @@ makeLenses ''Marker
 makeLenses ''UnorderedList
 makeLenses ''OrderedList
 makeLenses ''TaskList
+makeLenses ''Definition
