@@ -1,24 +1,22 @@
 module Main where
 
-import Control.Applicative
-import Control.Monad.Trans.State
+import Control.Monad.Trans.State (State, evalState)
 import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy as B
 import Data.Foldable (fold)
-import Data.Functor
+import Data.Functor ((<&>))
 import qualified Data.Sequence as S
 import Data.Text (Text, pack)
 import qualified Data.Text.IO as T
 import qualified Data.Vector as V
-import Debug.Trace
 import Neorg.Document
 import Neorg.Document.Tag
 import Neorg.Parser.Main
-import Optics.Core
+import Optics.Core ((<&>), (^.))
 import System.Environment (getArgs)
 import qualified Text.Pandoc.Builder as P
 import qualified Text.Pandoc.Definition as P
-import Type.Set
+import Type.Set (FromList)
 
 main :: IO ()
 main = do

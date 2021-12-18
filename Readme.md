@@ -35,7 +35,7 @@ Here, I have used the `neorg-pandoc-linux86` binary to transform my `norg` file 
 
 - Attached Modifiers :heavy_check_mark: 
 - Intersecting modifiers :heavy_check_mark: 
-- Detached Modifiers :white_check_mark:
+- Detached Modifiers :heavy_check_mark:
   - Heading :heavy_check_mark:
   - List :heavy_check_mark:
     - Unordered lists :heavy_check_mark:
@@ -44,7 +44,7 @@ Here, I have used the `neorg-pandoc-linux86` binary to transform my `norg` file 
   - Quotes :heavy_check_mark: 
   - Markers :heavy_check_mark: 
   - Insertions :x:
-- Definitions :x:
+- Definitions :heavy_check_mark:
 - Tags :white_check_mark:
   - Carryover tags :x:
   - @document.meta :white_check_mark:

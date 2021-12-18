@@ -61,11 +61,12 @@ data PureBlock (tags :: TypeSet)
   | Tag (SomeTag tags)
   deriving (Show, Eq)
 
-data Block tags
+data Block (tags :: TypeSet)
   = PureBlock (PureBlock tags)
   | Heading Heading
   | Delimiter Delimiter
   | Marker Marker
+  | Definition (Definition tags)
   deriving (Show, Eq)
 
 type Blocks tags = V.Vector (Block tags)
@@ -90,16 +91,11 @@ data Quote = QuoteCons
 
 data Marker = MarkerCons {_markerId :: Text, _markerText :: Text} deriving (Show, Eq)
 
--- data Definition = DefinitionCons
---   { _definitionObject :: Text,
---     _definitionContent ::  ???
---   }
---   deriving (Show, Eq)
-
---
--- listBlockToBlock :: ListBlock -> Block
--- listBlockToBlock (ListParagraph p) = Paragraph p
--- listBlockToBlock (SubList list) = List list
+data Definition (tags :: TypeSet) = DefinitionCons
+  { _definitionObject :: Inline,
+    _definitionContent :: V.Vector (PureBlock tags)
+  }
+  deriving (Show, Eq)
 
 data UnorderedList = UnorderedListCons
   { _uListLevel :: IndentationLevel,

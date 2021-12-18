@@ -98,7 +98,11 @@ isMarkupElement = test $> False <|> pure True
         '=' -> P.notFollowedBy (repeating '=' >> P.hspace >> newline)
         '>' -> P.notFollowedBy (repeatingLevel '>' >> singleSpace)
         '~' -> P.notFollowedBy (repeatingLevel '~' >> singleSpace)
-        '$' -> P.notFollowedBy (anyChar >> singleSpace)
+        '$' ->
+          P.notFollowedBy
+            ( void (P.string "$ ")
+                <|> void (P.string "$$" >> (singleSpace <|> newline <|> P.eof))
+            )
         '_' -> P.notFollowedBy (repeating '_' >>= guard . (> 2) >> P.hspace >> newline)
         '|' -> P.notFollowedBy (P.char '|' >> singleSpace >> P.hspace >> textWord)
         '@' -> P.notFollowedBy (void (P.string "@end") <|> (anyChar >> anyChar >>= guard . isLetter))

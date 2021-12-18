@@ -7,7 +7,7 @@ import Control.Monad.Trans.State (get, gets, modify, put)
 import Data.Char (isLetter)
 import Data.Foldable (Foldable (foldl'))
 import Data.Functor (($>))
-import Data.Maybe (maybeToList)
+import Data.Maybe (catMaybes, maybeToList)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -19,19 +19,6 @@ import Neorg.Parser.Utils
 import Optics.Core (view, (%~), (.~), (<&>))
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
-
--- block :: GenerateTagParser tags => Parser [Block tags]
--- block = do
---   consumingTry $ do
---     clearBlankSpace
---     P.notFollowedBy P.eof
---   P.lookAhead anyChar >>= \case
---     c -> do
---       s <- isSpecialLineStart
---       if s
---         then specialLineStart c
---         else pure . Paragraph <$> paragraph
---
 
 pureBlockWithoutParagraph :: GenerateTagParser tags => Parser (Maybe (PureBlock tags))
 pureBlockWithoutParagraph =
@@ -68,6 +55,7 @@ block = do
         '_' -> horizonalLine $> pure (Delimiter HorizonalLine)
         '|' -> pure . Marker <$> marker
         '*' -> headingWithDelimiter
+        '$' -> pure . Definition <$> definition
         _ -> fail "Not a delimiter and not a heading"
 
 tag :: forall tags. GenerateTagParser tags => Parser (Maybe (SomeTag tags))
@@ -179,7 +167,22 @@ heading = do
   pure $ HeadingCons text level
   where
     headingText = do
-      level <- P.try $ do
-        repeatingLevel '*' >-> singleSpace
+      level <-
+        P.try $
+          repeatingLevel '*' >-> singleSpace
       headingText <- singleLineParagraph
       pure (level, headingText)
+
+definition :: GenerateTagParser tags => Parser (Definition tags)
+definition =
+  singleLineDefinition <|> multiLineDefinition
+  where
+    singleLineDefinition = do
+      P.try $ P.string "$ "
+      definitionObject <- singleLineParagraph
+      DefinitionCons definitionObject . V.fromList . maybeToList <$> pureBlock
+    multiLineDefinition = do
+      P.try $ P.string "$$ "
+      definitionObject <- singleLineParagraph
+      pureBlocks <- catMaybes <$> P.manyTill (clearBlankSpace >> pureBlock) (void (P.string "$$") <|> P.eof)
+      pure $ DefinitionCons definitionObject $ V.fromList pureBlocks

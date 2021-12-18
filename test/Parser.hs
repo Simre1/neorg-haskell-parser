@@ -24,7 +24,7 @@ parserTests :: TestTree
 parserTests =
   testGroup
     "Parser tests"
-    [headingTests, paragraphTests, listTests, horizonalLineTests, markerTests, tagTests]
+    [headingTests, paragraphTests, listTests, horizonalLineTests, markerTests, tagTests, definitionTest]
 
 tagTests :: TestTree
 tagTests =
@@ -223,32 +223,34 @@ listTests =
       testCase "Sublists" $
         parse (blocks @Empty) "- l1: test\n~~ o1\n~~ o2\n- l2"
           @?= V.fromList
-            [ PureBlock $ List $
-                UnorderedList $
-                  UnorderedListCons
-                    { _uListLevel = I0,
-                      _uListItems =
-                        V.fromList
-                          [ V.fromList
-                              [ ListParagraph (ConcatInline $ V.fromList [Text "l1:", Space, Text "test"]),
-                                SubList
-                                  ( OrderedList $
-                                      OrderedListCons
-                                        { _oListLevel = I1,
-                                          _oListItems = V.fromList [V.singleton (ListParagraph (Text "o1")), V.singleton (ListParagraph (Text "o2"))]
-                                        }
-                                  )
-                              ],
-                            V.singleton $ ListParagraph (Text "l2")
-                          ]
-                    }
+            [ PureBlock $
+                List $
+                  UnorderedList $
+                    UnorderedListCons
+                      { _uListLevel = I0,
+                        _uListItems =
+                          V.fromList
+                            [ V.fromList
+                                [ ListParagraph (ConcatInline $ V.fromList [Text "l1:", Space, Text "test"]),
+                                  SubList
+                                    ( OrderedList $
+                                        OrderedListCons
+                                          { _oListLevel = I1,
+                                            _oListItems = V.fromList [V.singleton (ListParagraph (Text "o1")), V.singleton (ListParagraph (Text "o2"))]
+                                          }
+                                    )
+                                ],
+                              V.singleton $ ListParagraph (Text "l2")
+                            ]
+                      }
             ],
       testCase "Escaped list" $
         parse (blocks @Empty) "\\- test1"
           @?= V.singleton
-            ( PureBlock $ Paragraph
-                ( ConcatInline $ V.fromList [Text "-", Space, Text "test1"]
-                )
+            ( PureBlock $
+                Paragraph
+                  ( ConcatInline $ V.fromList [Text "-", Space, Text "test1"]
+                  )
             )
     ]
 
@@ -340,6 +342,45 @@ headingTests =
                 HeadingCons
                   { _headingText = Text "Heading2",
                     _headingLevel = I1
+                  }
+            ]
+    ]
+
+definitionTest :: TestTree
+definitionTest =
+  testGroup
+    "Definition tests"
+    [ testCase "Single-Line Definition" $
+        parse (blocks @Empty) "$ Single-Paragraph\nsingle-line"
+          @?= V.fromList
+            [ Definition $
+                DefinitionCons
+                  { _definitionObject = Text "Single-Paragraph",
+                    _definitionContent = V.singleton (Paragraph (Text "single-line"))
+                  }
+            ],
+      testCase "Multi-Line Definition" $
+        parse (blocks @Empty) "$$ Multi-Line\nline1\n\nline2\n$$"
+          @?= V.fromList
+            [ Definition $
+                DefinitionCons
+                  { _definitionObject = Text "Multi-Line",
+                    _definitionContent = V.fromList [Paragraph (Text "line1"), Paragraph (Text "line2")]
+                  }
+            ],
+      testCase "Complex Multi-Line Definition" $
+        parse (blocks @Empty) "$$ *Multi*-Line\n- list1\n- list2\n> some quote\n$$"
+          @?= V.fromList
+            [ Definition $
+                DefinitionCons
+                  { _definitionObject = ConcatInline $ V.fromList [Bold (Text "Multi"), Text "-Line"],
+                    _definitionContent =
+                      V.fromList
+                        [ List $
+                            UnorderedList $
+                              UnorderedListCons {_uListLevel = I0, _uListItems = V.fromList [V.singleton $ ListParagraph $ Text "list1", V.singleton $ ListParagraph $ Text "list2"]},
+                          Quote (QuoteCons {_quoteLevel = I0, _quoteContent = ConcatInline $ V.fromList [Text "some", Space, Text "quote"]})
+                        ]
                   }
             ]
     ]
