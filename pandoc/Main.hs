@@ -41,13 +41,17 @@ convertDocument handler (Document blocks) = runConvert $ P.doc . V.foldMap id <$
 
 convertBlock :: TagHandler tags (Convert P.Blocks) -> Block tags -> Convert P.Blocks
 convertBlock handler = \case
-  Paragraph i -> convertParagraph i
   Heading heading -> convertHeading handler heading
-  Quote quote -> convertQuote quote
-  List list -> convertList list
   Delimiter delimiter -> convertDelimiter delimiter
   Marker marker -> convertMarker marker
+  PureBlock pb -> convertPureBlock handler pb
+
+convertPureBlock :: TagHandler tags (Convert P.Blocks) -> PureBlock tags -> Convert P.Blocks
+convertPureBlock handler = \case
   Tag tag -> handleSomeTag handler tag
+  Paragraph i -> convertParagraph i
+  Quote quote -> convertQuote quote
+  List list -> convertList list
 
 convertParagraph :: Inline -> Convert P.Blocks
 convertParagraph = fmap P.para . convertInline
@@ -70,7 +74,6 @@ convertList = \case
      in fmap (P.bulletList . V.toList) $
           traverse (\(taskStatus, items) -> applicativeConcatMap (convertTaskListBlock taskStatus) items) $
             tl ^. tListItems
-
 
 convertQuote :: Quote -> Convert P.Blocks
 convertQuote quote = P.blockQuote . P.para <$> convertInline (quote ^. quoteContent)
