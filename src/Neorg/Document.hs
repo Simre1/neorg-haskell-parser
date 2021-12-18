@@ -54,17 +54,19 @@ instance Enum IndentationLevel where
 indentationLevelToInt :: IndentationLevel -> Int
 indentationLevelToInt = fromEnum
 
-data Block (tags :: TypeSet)
+data PureBlock (tags :: TypeSet)
   = Paragraph Inline
-  | Heading Heading
   | Quote Quote
   | List List
-  | Delimiter Delimiter
-  | Marker Marker
   | Tag (SomeTag tags)
   deriving (Show, Eq)
 
--- Tag :: SomeTag tags -> Block
+data Block tags
+  = PureBlock (PureBlock tags)
+  | Heading Heading
+  | Delimiter Delimiter
+  | Marker Marker
+  deriving (Show, Eq)
 
 type Blocks tags = V.Vector (Block tags)
 
@@ -88,7 +90,6 @@ data Quote = QuoteCons
 
 data Marker = MarkerCons {_markerId :: Text, _markerText :: Text} deriving (Show, Eq)
 
---
 -- data Definition = DefinitionCons
 --   { _definitionObject :: Text,
 --     _definitionContent ::  ???

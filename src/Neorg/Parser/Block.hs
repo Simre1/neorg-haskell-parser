@@ -20,29 +20,55 @@ import Optics.Core (view, (%~), (.~), (<&>))
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 
-singleBlock :: GenerateTagParser tags => Parser [Block tags]
-singleBlock = do
-  consumingTry $ do
-    clearBlankSpace
-    P.notFollowedBy P.eof
-  P.lookAhead anyChar >>= \case
-    c -> do
-      s <- isSpecialLineStart
-      if s
-        then specialLineStart c
-        else pure . Paragraph <$> paragraph
+-- block :: GenerateTagParser tags => Parser [Block tags]
+-- block = do
+--   consumingTry $ do
+--     clearBlankSpace
+--     P.notFollowedBy P.eof
+--   P.lookAhead anyChar >>= \case
+--     c -> do
+--       s <- isSpecialLineStart
+--       if s
+--         then specialLineStart c
+--         else pure . Paragraph <$> paragraph
+--
 
-specialLineStart :: GenerateTagParser tags => Char -> Parser [Block tags]
-specialLineStart = \case
-  '*' -> headingWithDelimiter
-  '-' -> pure . List . TaskList <$> taskList I0 <|> pure . List . UnorderedList <$> unorderedList I0 <|> weakDelimiter $> [Delimiter WeakDelimiter]
-  '=' -> strongDelimiter $> [Delimiter StrongDelimiter]
-  '>' -> pure . Quote <$> quote
-  '~' -> pure . List . OrderedList <$> orderedList I0
-  '_' -> horizonalLine $> pure (Delimiter HorizonalLine)
-  '|' -> pure . Marker <$> marker
-  '@' -> maybeToList . fmap Tag <$> tag
-  _ -> fail "Not one of: Heading, Delimiter, Quote, List, Horizontal Line, Tag, Marker"
+pureBlockWithoutParagraph :: GenerateTagParser tags => Parser (Maybe (PureBlock tags))
+pureBlockWithoutParagraph =
+  lookChar >>= \case
+    '-' -> pure . List . TaskList <$> taskList I0 <|> pure . List . UnorderedList <$> unorderedList I0
+    '>' -> pure . Quote <$> quote
+    '~' -> pure . List . OrderedList <$> orderedList I0
+    '@' -> fmap Tag <$> tag
+    _ -> fail "Not a pure block"
+
+pureBlock :: GenerateTagParser tags => Parser (Maybe (PureBlock tags))
+pureBlock = pureBlockWithoutParagraph <|> pure . Paragraph <$> paragraph
+
+blocks :: GenerateTagParser tags => Parser (Blocks tags)
+blocks = do
+  blocks <- P.many $ do
+    consumingTry $ do
+      clearBlankSpace
+      P.notFollowedBy P.eof
+    block
+  pure $ V.fromList $ mconcat blocks
+
+block :: GenerateTagParser tags => Parser [Block tags]
+block = do
+  isMarkup <- isMarkupElement
+  if isMarkup
+    then impureBlock <|> maybeToList . fmap PureBlock <$> pureBlockWithoutParagraph
+    else pure . PureBlock . Paragraph <$> paragraph
+  where
+    impureBlock =
+      lookChar >>= \case
+        '-' -> weakDelimiter $> [Delimiter WeakDelimiter]
+        '=' -> strongDelimiter $> [Delimiter StrongDelimiter]
+        '_' -> horizonalLine $> pure (Delimiter HorizonalLine)
+        '|' -> pure . Marker <$> marker
+        '*' -> headingWithDelimiter
+        _ -> fail "Not a delimiter and not a heading"
 
 tag :: forall tags. GenerateTagParser tags => Parser (Maybe (SomeTag tags))
 tag = do

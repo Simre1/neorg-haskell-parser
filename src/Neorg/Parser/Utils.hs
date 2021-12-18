@@ -82,8 +82,8 @@ viewChar = do
 textWord :: P.MonadParsec e Text p => p Text
 textWord = P.takeWhile1P (Just "Text word") (\c -> c /= ' ' && c /= '\n' && c /= '\r')
 
-isSpecialLineStart :: P.MonadParsec e Text p => p Bool
-isSpecialLineStart = test $> False <|> pure True
+isMarkupElement :: P.MonadParsec e Text p => p Bool
+isMarkupElement = test $> False <|> pure True
   where
     test =
       lookChar >>= \case

@@ -10,8 +10,8 @@ import Neorg.Parser.Block
 import Neorg.Parser.Main hiding (parse)
 import Neorg.Parser.Paragraph
 import Neorg.Parser.Types
-import Test.Tasty ( testGroup, TestTree )
-import Test.Tasty.HUnit ( testCase, (@?=) )
+import Test.Tasty (TestTree, testGroup)
+import Test.Tasty.HUnit (testCase, (@?=))
 import qualified Text.Megaparsec as P
 import Type.Set (FromList, TypeSet (Empty))
 
@@ -112,21 +112,23 @@ paragraphTests =
       testCase "Paragraphs separated with Break" $
         parse (blocks @Empty) "Text1\n\nText2"
           @?= V.fromList
-            [ Paragraph (Text "Text1"),
-              Paragraph (Text "Text2")
+            [ PureBlock $ Paragraph (Text "Text1"),
+              PureBlock $ Paragraph (Text "Text2")
             ],
       testCase "Two sentences with blank space" $
         parse (blocks @Empty) "Simple sentence.\n   \n   Another sentence.\n\n"
           @?= V.fromList
-            [ Paragraph
-                ( ConcatInline $
-                    V.fromList
-                      [Text "Simple", Space, Text "sentence."]
-                ),
-              Paragraph
-                ( ConcatInline $
-                    V.fromList [Text "Another", Space, Text "sentence."]
-                )
+            [ PureBlock $
+                Paragraph
+                  ( ConcatInline $
+                      V.fromList
+                        [Text "Simple", Space, Text "sentence."]
+                  ),
+              PureBlock $
+                Paragraph
+                  ( ConcatInline $
+                      V.fromList [Text "Another", Space, Text "sentence."]
+                  )
             ],
       testCase "Single-Line intersecting Bold" $ parse singleLineParagraph ":*bold*:" @?= Bold (Text "bold"),
       testCase "Single-Line intersecting Italic" $ parse singleLineParagraph ":/italic/:" @?= Italic (Text "italic"),
@@ -146,7 +148,7 @@ markerTests =
     "Marker tests"
     [ testCase "Simple Markup" $ parse marker "| Simple marker" @?= MarkerCons "simple-marker" "Simple marker",
       testCase "Block Marker" $ parse (blocks @Empty) "| Simple marker" @?= V.fromList [Marker $ MarkerCons "simple-marker" "Simple marker"],
-      testCase "Not a Marker" $ parse (blocks @Empty) "|" @?= V.fromList [Paragraph $ Text "|"]
+      testCase "Not a Marker" $ parse (blocks @Empty) "|" @?= V.fromList [PureBlock . Paragraph $ Text "|"]
     ]
 
 listTests :: TestTree
@@ -205,22 +207,23 @@ listTests =
       testCase "List with Paragraph" $
         parse (blocks @Empty) "Paragraph\n- List\n\nParagraph"
           @?= V.fromList
-            [ Paragraph (Text "Paragraph"),
-              List $
-                UnorderedList $
-                  UnorderedListCons
-                    { _uListLevel = I0,
-                      _uListItems =
-                        V.singleton
-                          . V.singleton
-                          $ ListParagraph (Text "List")
-                    },
-              Paragraph (Text "Paragraph")
+            [ PureBlock $ Paragraph (Text "Paragraph"),
+              PureBlock $
+                List $
+                  UnorderedList $
+                    UnorderedListCons
+                      { _uListLevel = I0,
+                        _uListItems =
+                          V.singleton
+                            . V.singleton
+                            $ ListParagraph (Text "List")
+                      },
+              PureBlock $ Paragraph (Text "Paragraph")
             ],
       testCase "Sublists" $
         parse (blocks @Empty) "- l1: test\n~~ o1\n~~ o2\n- l2"
           @?= V.fromList
-            [ List $
+            [ PureBlock $ List $
                 UnorderedList $
                   UnorderedListCons
                     { _uListLevel = I0,
@@ -243,7 +246,7 @@ listTests =
       testCase "Escaped list" $
         parse (blocks @Empty) "\\- test1"
           @?= V.singleton
-            ( Paragraph
+            ( PureBlock $ Paragraph
                 ( ConcatInline $ V.fromList [Text "-", Space, Text "test1"]
                 )
             )
@@ -276,7 +279,7 @@ headingTests =
             ],
       testCase "No Headings" $
         parse (blocks @Empty) "*Heading1"
-          @?= V.singleton (Paragraph $ Text "*Heading1"),
+          @?= V.singleton (PureBlock $ Paragraph $ Text "*Heading1"),
       testCase "Nested Headings" $
         parse (blocks @Empty) "* Heading\n** SubHeading"
           @?= V.fromList
@@ -299,14 +302,14 @@ headingTests =
                   { _headingText = Text "Heading1",
                     _headingLevel = I0
                   },
-              Paragraph $ Text "Example1",
+              PureBlock $ Paragraph $ Text "Example1",
               Delimiter WeakDelimiter,
               Heading $
                 HeadingCons
                   { _headingText = Text "Heading2",
                     _headingLevel = I0
                   },
-              Paragraph $ Text "Example2"
+              PureBlock $ Paragraph $ Text "Example2"
             ],
       testCase "Weak delimiter" $
         parse (blocks @Empty) "* Heading1\n---\n** Heading2"

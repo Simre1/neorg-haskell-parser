@@ -29,7 +29,3 @@ document :: GenerateTagParser tags => Parser (Document tags)
 document =
   Document <$> blocks
 
-blocks :: GenerateTagParser tags => Parser (Blocks tags)
-blocks = do
-  blocks <- P.many singleBlock
-  pure $ V.fromList $ mconcat blocks

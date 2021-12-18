@@ -16,7 +16,13 @@ This is a simple paragraph with a */bold itatlic/* word.
   @code
     Code block
   @end
-  sd
+  *sd*
+
+
+@table
+askjd | *askduh*
+
+@end
 
 * Test
 

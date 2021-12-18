@@ -256,7 +256,7 @@ paragraph = runInline $ do
       <|> P.try
         ( do
             gets (view delimitedActive) >>= guard
-            isSpecialLineStart >>= guard
+            isMarkupElement >>= guard
         )
 
 singleLineParagraph :: (MonadFail p, P.MonadParsec Void Text p) => p Inline
