@@ -51,7 +51,7 @@ convertPureBlock handler = \case
   Tag tag -> handleSomeTag handler tag
   Paragraph i -> convertParagraph i
   Quote quote -> convertQuote quote
-  List list -> convertList list
+  List list -> convertList handler list
 
 convertParagraph :: Inline -> Convert P.Blocks
 convertParagraph = fmap P.para . convertInline
@@ -59,29 +59,24 @@ convertParagraph = fmap P.para . convertInline
 convertMarker :: Marker -> Convert P.Blocks
 convertMarker = error "not implemented"
 
-convertList :: List -> Convert P.Blocks
-convertList = \case
+convertList :: TagHandler tags (Convert P.Blocks) -> List tags -> Convert P.Blocks
+convertList handler = \case
   UnorderedList ul ->
     fmap (P.bulletList . V.toList) $
-      traverse (applicativeConcatMap convertListBlock) $
+      traverse (applicativeConcatMap $ convertPureBlock handler) $
         ul ^. uListItems
   OrderedList ol ->
     fmap (P.bulletList . V.toList) $
-      traverse (applicativeConcatMap convertListBlock) $
+      traverse (applicativeConcatMap $ convertPureBlock handler) $
         ol ^. oListItems
   TaskList tl ->
-    let convertTaskListBlock taskStatus lb = convertListBlock lb
+    let convertTaskListBlock taskStatus lb = convertPureBlock handler lb
      in fmap (P.bulletList . V.toList) $
           traverse (\(taskStatus, items) -> applicativeConcatMap (convertTaskListBlock taskStatus) items) $
             tl ^. tListItems
 
 convertQuote :: Quote -> Convert P.Blocks
 convertQuote quote = P.blockQuote . P.para <$> convertInline (quote ^. quoteContent)
-
-convertListBlock :: ListBlock -> Convert P.Blocks
-convertListBlock = \case
-  ListParagraph i -> P.para <$> convertInline i
-  SubList l -> convertList l
 
 convertHeading :: TagHandler tags (Convert P.Blocks) -> Heading -> Convert P.Blocks
 convertHeading handler heading = do

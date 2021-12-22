@@ -111,6 +111,11 @@ isMarkupElement = test $> False <|> pure True
 clearBlankSpace :: P.MonadParsec e Text p => p ()
 clearBlankSpace = void $ P.takeWhileP (Just "Clearing whitespace") (<= ' ')
 
+manyOrEnd :: (Monad f, Alternative f) => f () -> f a -> f end -> f [a]
+manyOrEnd s p e = do
+  s
+  e $> [] <|> (:) <$> p <*> manyOrEnd s p e <|> pure []
+
 -- data Embed (s :: *) a = Embed {embedState :: s, embedInfo :: a s}
 --
 -- newtype WithEnd s = UntilMatch (P.Parsec Void s ())

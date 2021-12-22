@@ -6,7 +6,7 @@ import Control.Monad.Trans.State (modify)
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Time (parseTimeM)
-import Data.Time.Format (defaultTimeLocale, parseTimeM)
+import Data.Time.Format (defaultTimeLocale)
 import qualified Data.Vector as V
 import Neorg.Document
 import Neorg.Parser.Paragraph
@@ -71,8 +71,10 @@ instance ParseTagContent "table" where
          in P.try delimiter <|> inlines
       cellParagraph = runInline $ do
         modify $ delimitedActive .~ False
-        paragraph' $
-          void (P.string " | ")
-            <|> P.try
-              (P.string " |" >> P.lookAhead (void newline <|> P.eof))
-            <|> void (P.lookAhead newline)
+        let end =
+              void (P.string " | ")
+                <|> P.try
+                  (P.string " |" >> P.lookAhead (void newline <|> P.eof))
+                <|> void (P.lookAhead newline)
+        paragraph' end
+        end

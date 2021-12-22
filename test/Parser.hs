@@ -1,23 +1,23 @@
 module Parser where
 
-import Control.Monad.Trans.State (evalState)
+import Control.Monad.Trans.Reader (ReaderT (runReaderT))
+import Control.Monad.Trans.State (evalStateT)
+import Control.Monad.Trans.State.Lazy (StateT)
 import Data.Data (Proxy (..))
 import Data.Text (Text)
 import Data.Time (defaultTimeLocale, parseTimeM)
 import qualified Data.Vector as V
+import Data.Void (Void)
 import Neorg.Document
-import Neorg.Parser.Block
 import Neorg.Parser.Main hiding (parse)
-import Neorg.Parser.Paragraph
-import Neorg.Parser.Types
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (testCase, (@?=))
 import qualified Text.Megaparsec as P
 import Type.Set (FromList, TypeSet (Empty))
 
-parse :: Parser a -> Text -> a
+parse :: StateT CurrentHeadingLevel (P.Parsec Void Text) a -> Text -> a
 parse p i =
-  let res = evalState (P.runParserT p "test" i) defaultParserState
+  let res = P.runParser (evalStateT p (CurrentHeadingLevel I0)) "test" i
    in either (error . P.errorBundlePretty) id res
 
 parserTests :: TestTree
@@ -30,7 +30,7 @@ tagTests :: TestTree
 tagTests =
   testGroup
     "Tag tests"
-    [ testCase "Unknown tag" $ parse (tag @Empty) "@unknown\n@end" @?= Nothing,
+    [ testCase "Unknown tag" $ parse (tag @'Empty) "@unknown\n@end" @?= Nothing,
       testCase "Code tag" $ parse (tag @(FromList '["code"])) "@code \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"code") Nothing "helloworld\n"),
       testCase "Math tag" $ parse (tag @(FromList '["math"])) "@math \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"math") () "helloworld\n"),
       testCase "Comment tag" $ parse (tag @(FromList '["comment"])) "@comment \nhelloworld\n@end" @?= Just (SomeTag (Proxy @"comment") () "helloworld\n"),
@@ -110,13 +110,13 @@ paragraphTests =
       testCase "Bold and italic word" $ parse singleLineParagraph "*/bolditalic/*" @?= Bold (Italic (Text "bolditalic")),
       testCase "~ Symbol" $ parse singleLineParagraph "Text~\n* NoHeading" @?= ConcatInline (V.fromList [Text "Text*", Space, Text "NoHeading"]),
       testCase "Paragraphs separated with Break" $
-        parse (blocks @Empty) "Text1\n\nText2"
+        parse (blocks @'Empty) "Text1\n\nText2"
           @?= V.fromList
             [ PureBlock $ Paragraph (Text "Text1"),
               PureBlock $ Paragraph (Text "Text2")
             ],
       testCase "Two sentences with blank space" $
-        parse (blocks @Empty) "Simple sentence.\n   \n   Another sentence.\n\n"
+        parse (blocks @'Empty) "Simple sentence.\n   \n   Another sentence.\n\n"
           @?= V.fromList
             [ PureBlock $
                 Paragraph
@@ -147,8 +147,8 @@ markerTests =
   testGroup
     "Marker tests"
     [ testCase "Simple Markup" $ parse marker "| Simple marker" @?= MarkerCons "simple-marker" "Simple marker",
-      testCase "Block Marker" $ parse (blocks @Empty) "| Simple marker" @?= V.fromList [Marker $ MarkerCons "simple-marker" "Simple marker"],
-      testCase "Not a Marker" $ parse (blocks @Empty) "|" @?= V.fromList [PureBlock . Paragraph $ Text "|"]
+      testCase "Block Marker" $ parse (blocks @'Empty) "| Simple marker" @?= V.fromList [Marker $ MarkerCons "simple-marker" "Simple marker"],
+      testCase "Not a Marker" $ parse (blocks @'Empty) "|" @?= V.fromList [PureBlock . Paragraph $ Text "|"]
     ]
 
 listTests :: TestTree
@@ -156,56 +156,56 @@ listTests =
   testGroup
     "List tests"
     [ testCase "Single unordered item" $
-        parse (unorderedList I0) "- test1"
+        parse (runReaderT (unorderedList @'Empty) (CurrentListLevel I0)) "- test1"
           @?= UnorderedListCons
             { _uListLevel = I0,
               _uListItems =
                 V.singleton
                   . V.singleton
-                  $ ListParagraph (Text "test1")
+                  $ Paragraph (Text "test1")
             },
       testCase "Two unordered items" $
-        parse (unorderedList I0) "- test1\n- test2"
+        parse (runReaderT (unorderedList @'Empty) (CurrentListLevel I0)) "- test1\n- test2"
           @?= UnorderedListCons
             { _uListLevel = I0,
               _uListItems =
                 V.fromList
                   [ V.singleton $
-                      ListParagraph (Text "test1"),
+                      Paragraph (Text "test1"),
                     V.singleton $
-                      ListParagraph (Text "test2")
+                      Paragraph (Text "test2")
                   ]
             },
       testCase "Ordered List" $
-        parse (orderedList I0) "~~ test1\n~~ test2"
+        parse (runReaderT (orderedList @'Empty) (CurrentListLevel I0)) "~~ test1\n~~ test2"
           @?= OrderedListCons
             { _oListLevel = I1,
               _oListItems =
                 V.fromList
                   [ V.singleton $
-                      ListParagraph (Text "test1"),
+                      Paragraph (Text "test1"),
                     V.singleton $
-                      ListParagraph (Text "test2")
+                      Paragraph (Text "test2")
                   ]
             },
       testCase "Task List" $
-        parse (taskList I0) "- [x] Done\n- [*] Pending"
+        parse (runReaderT (taskList @'Empty) (CurrentListLevel I0)) "- [x] Done\n- [*] Pending"
           @?= TaskListCons
             { _tListLevel = I0,
               _tListItems =
                 V.fromList
                   [ ( TaskDone,
                       V.singleton $
-                        ListParagraph (Text "Done")
+                        Paragraph (Text "Done")
                     ),
                     ( TaskPending,
                       V.singleton $
-                        ListParagraph (Text "Pending")
+                        Paragraph (Text "Pending")
                     )
                   ]
             },
       testCase "List with Paragraph" $
-        parse (blocks @Empty) "Paragraph\n- List\n\nParagraph"
+        parse (blocks @'Empty) "Paragraph\n- List\n\nParagraph"
           @?= V.fromList
             [ PureBlock $ Paragraph (Text "Paragraph"),
               PureBlock $
@@ -216,12 +216,12 @@ listTests =
                         _uListItems =
                           V.singleton
                             . V.singleton
-                            $ ListParagraph (Text "List")
+                            $ Paragraph (Text "List")
                       },
               PureBlock $ Paragraph (Text "Paragraph")
             ],
       testCase "Sublists" $
-        parse (blocks @Empty) "- l1: test\n~~ o1\n~~ o2\n- l2"
+        parse (blocks @'Empty) "- l1: test\n~~ o1\n~~ o2\n- l2"
           @?= V.fromList
             [ PureBlock $
                 List $
@@ -231,21 +231,21 @@ listTests =
                         _uListItems =
                           V.fromList
                             [ V.fromList
-                                [ ListParagraph (ConcatInline $ V.fromList [Text "l1:", Space, Text "test"]),
-                                  SubList
+                                [ Paragraph (ConcatInline $ V.fromList [Text "l1:", Space, Text "test"]),
+                                  List
                                     ( OrderedList $
                                         OrderedListCons
                                           { _oListLevel = I1,
-                                            _oListItems = V.fromList [V.singleton (ListParagraph (Text "o1")), V.singleton (ListParagraph (Text "o2"))]
+                                            _oListItems = V.fromList [V.singleton (Paragraph (Text "o1")), V.singleton (Paragraph (Text "o2"))]
                                           }
                                     )
                                 ],
-                              V.singleton $ ListParagraph (Text "l2")
+                              V.singleton $ Paragraph (Text "l2")
                             ]
                       }
             ],
       testCase "Escaped list" $
-        parse (blocks @Empty) "\\- test1"
+        parse (blocks @'Empty) "\\- test1"
           @?= V.singleton
             ( PureBlock $
                 Paragraph
@@ -265,7 +265,7 @@ headingTests =
               _headingLevel = I0
             },
       testCase "Equal Headings" $
-        parse (blocks @Empty) "* Heading1\n* Heading2"
+        parse (blocks @'Empty) "* Heading1\n* Heading2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -280,10 +280,10 @@ headingTests =
                   }
             ],
       testCase "No Headings" $
-        parse (blocks @Empty) "*Heading1"
+        parse (blocks @'Empty) "*Heading1"
           @?= V.singleton (PureBlock $ Paragraph $ Text "*Heading1"),
       testCase "Nested Headings" $
-        parse (blocks @Empty) "* Heading\n** SubHeading"
+        parse (blocks @'Empty) "* Heading\n** SubHeading"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -297,7 +297,7 @@ headingTests =
                   }
             ],
       testCase "Headings with Paragraph" $
-        parse (blocks @Empty) "* Heading1\nExample1\n* Heading2\nExample2"
+        parse (blocks @'Empty) "* Heading1\nExample1\n* Heading2\nExample2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -314,7 +314,7 @@ headingTests =
               PureBlock $ Paragraph $ Text "Example2"
             ],
       testCase "Weak delimiter" $
-        parse (blocks @Empty) "* Heading1\n---\n** Heading2"
+        parse (blocks @'Empty) "* Heading1\n---\n** Heading2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -330,7 +330,7 @@ headingTests =
                   }
             ],
       testCase "Strong delimiter" $
-        parse (blocks @Empty) "* Heading1\n===\n** Heading2"
+        parse (blocks @'Empty) "* Heading1\n===\n** Heading2"
           @?= V.fromList
             [ Heading $
                 HeadingCons
@@ -351,7 +351,7 @@ definitionTest =
   testGroup
     "Definition tests"
     [ testCase "Single-Line Definition" $
-        parse (blocks @Empty) "$ Single-Paragraph\nsingle-line"
+        parse (blocks @'Empty) "$ Single-Paragraph\nsingle-line"
           @?= V.fromList
             [ Definition $
                 DefinitionCons
@@ -360,7 +360,7 @@ definitionTest =
                   }
             ],
       testCase "Multi-Line Definition" $
-        parse (blocks @Empty) "$$ Multi-Line\nline1\n\nline2\n$$"
+        parse (blocks @'Empty) "$$ Multi-Line\nline1\n\nline2\n$$"
           @?= V.fromList
             [ Definition $
                 DefinitionCons
@@ -369,7 +369,7 @@ definitionTest =
                   }
             ],
       testCase "Complex Multi-Line Definition" $
-        parse (blocks @Empty) "$$ *Multi*-Line\n- list1\n- list2\n> some quote\n$$"
+        parse (blocks @'Empty) "$$ *Multi*-Line\n- list1\n- list2\n\n> some quote\n$$"
           @?= V.fromList
             [ Definition $
                 DefinitionCons
@@ -378,7 +378,7 @@ definitionTest =
                       V.fromList
                         [ List $
                             UnorderedList $
-                              UnorderedListCons {_uListLevel = I0, _uListItems = V.fromList [V.singleton $ ListParagraph $ Text "list1", V.singleton $ ListParagraph $ Text "list2"]},
+                              UnorderedListCons {_uListLevel = I0, _uListItems = V.fromList [V.singleton $ Paragraph $ Text "list1", V.singleton $ Paragraph $ Text "list2"]},
                           Quote (QuoteCons {_quoteLevel = I0, _quoteContent = ConcatInline $ V.fromList [Text "some", Space, Text "quote"]})
                         ]
                   }

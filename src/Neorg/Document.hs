@@ -1,13 +1,12 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Neorg.Document where
 
 import Data.Data (Proxy)
-import qualified Data.Map as M
 import Data.Maybe (isJust)
-import Data.Text (pack)
-import Data.Text as T (Text, unwords)
-import Data.Time.Calendar (Day, showGregorian)
+import Data.Text as T (Text)
+import Data.Time.Calendar (Day)
 import qualified Data.Vector as V
 import Data.Void (Void)
 import GHC.TypeLits (KnownSymbol, Symbol, sameSymbol, symbolVal)
@@ -15,6 +14,7 @@ import Optics.TH (makeLenses)
 import qualified Text.Megaparsec as P
 import Type.Set (TypeSet)
 import Unsafe.Coerce (unsafeCoerce)
+import Type.Forall (Forall)
 
 newtype Document (tags :: TypeSet) = Document
   { _documentBlocks :: Blocks tags
@@ -57,7 +57,7 @@ indentationLevelToInt = fromEnum
 data PureBlock (tags :: TypeSet)
   = Paragraph Inline
   | Quote Quote
-  | List List
+  | List (List tags)
   | Tag (SomeTag tags)
   deriving (Show, Eq)
 
@@ -79,10 +79,6 @@ data Heading = HeadingCons
   }
   deriving (Show, Eq)
 
-data ListBlock = ListParagraph Inline | SubList List deriving (Show, Eq)
-
-type ListBlocks = V.Vector ListBlock
-
 data Quote = QuoteCons
   { _quoteLevel :: IndentationLevel,
     _quoteContent :: Inline
@@ -97,27 +93,31 @@ data Definition (tags :: TypeSet) = DefinitionCons
   }
   deriving (Show, Eq)
 
-data UnorderedList = UnorderedListCons
+data UnorderedList tags = UnorderedListCons
   { _uListLevel :: IndentationLevel,
-    _uListItems :: V.Vector (V.Vector ListBlock)
+    _uListItems :: V.Vector (V.Vector (PureBlock tags))
   }
   deriving (Show, Eq)
 
-data OrderedList = OrderedListCons
+data OrderedList tags = OrderedListCons
   { _oListLevel :: IndentationLevel,
-    _oListItems :: V.Vector (V.Vector ListBlock)
+    _oListItems :: V.Vector (V.Vector (PureBlock tags))
   }
   deriving (Show, Eq)
 
 data TaskStatus = TaskDone | TaskPending | TaskUndone deriving (Show, Eq)
 
-data TaskList = TaskListCons
+data TaskList tags = TaskListCons
   { _tListLevel :: IndentationLevel,
-    _tListItems :: V.Vector (TaskStatus, V.Vector ListBlock)
+    _tListItems :: V.Vector (TaskStatus, V.Vector (PureBlock tags))
   }
   deriving (Show, Eq)
 
-data List = UnorderedList UnorderedList | OrderedList OrderedList | TaskList TaskList deriving (Show, Eq)
+data List tags
+  = UnorderedList (UnorderedList tags)
+  | OrderedList (OrderedList tags)
+  | TaskList (TaskList tags)
+  deriving (Show, Eq)
 
 data Inline
   = Text Text
@@ -220,7 +220,7 @@ data TableRow = TableRowDelimiter | TableRowInlines (V.Vector Inline) deriving (
 
 instance Tag "ordered" where
   type TagArguments "ordered" = (Maybe Int, Maybe Int, Maybe Int)
-  type TagContent "ordered" = OrderedList
+  type TagContent "ordered" = Forall OrderedList
 
 makeLenses ''Document
 makeLenses ''DocumentMeta
