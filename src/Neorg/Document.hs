@@ -12,9 +12,9 @@ import Data.Void (Void)
 import GHC.TypeLits (KnownSymbol, Symbol, sameSymbol, symbolVal)
 import Optics.TH (makeLenses)
 import qualified Text.Megaparsec as P
+import Type.Forall (Forall)
 import Type.Set (TypeSet)
 import Unsafe.Coerce (unsafeCoerce)
-import Type.Forall (Forall)
 
 newtype Document (tags :: TypeSet) = Document
   { _documentBlocks :: Blocks tags
@@ -131,8 +131,25 @@ data Inline
   | Verbatim Text
   | Math Text
   | ConcatInline (V.Vector Inline)
-  | Link Text Inline
+  | Link Link
   | Space
+  deriving (Show, Eq)
+
+data Link = LinkCons LinkTarget (Maybe Inline) (Maybe TargetId) | AnchorCons TargetId deriving (Show, Eq)
+
+newtype TargetId = TargetId T.Text deriving (Show, Eq)
+
+data LinkTarget
+  = LinkTargetHeading TargetId
+  | LinkTargetMarker TargetId
+  | LinkTargetFootnote TargetId
+  | LinkTargetDefinition TargetId
+  | LinkTargetUrl T.Text
+  | LinkTargetNorgFile File
+  | LinkTargetFile File
+  deriving (Show, Eq)
+
+data File = Relative T.Text | Absolute T.Text | CurrentWorkspace T.Text | WorkSpace T.Text T.Text
   deriving (Show, Eq)
 
 instance Semigroup Inline where
@@ -167,7 +184,10 @@ canonalizeInline = \case
       (Spoiler i : r) -> Spoiler (canonalizeInline i) : processInlines r
       (Math t : r) -> Math t : processInlines r
       (Verbatim t : r) -> Verbatim t : processInlines r
-      (Link t i : r) -> Link t (canonalizeInline i) : processInlines r
+      (Link link : r) -> (: processInlines r) $
+        Link $ case link of
+          LinkCons target t targetId -> LinkCons target (canonalizeInline <$> t) targetId
+          o -> o
       (Space : r) -> Space : processInlines r
       [] -> []
 

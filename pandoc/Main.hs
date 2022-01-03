@@ -105,7 +105,7 @@ convertInline = \case
   Subscript inline -> P.subscript <$> convertInline inline
   Spoiler inline -> P.strikeout <$> convertInline inline -- TODO: No native spoilers in pandoc
   ConcatInline inlines -> V.foldMap id <$> traverse convertInline inlines
-  Link url inlines -> P.link url "" <$> convertInline inlines -- TODO: Investigate title field
+  Link (LinkCons target inlines maybeId) -> applicativeConcatMap convertInline inlines -- TODO: Investigate title field
   Space -> pure P.space
   Verbatim t -> pure $ P.code t
   Math t -> pure $ P.math t

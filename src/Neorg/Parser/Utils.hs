@@ -11,11 +11,12 @@ import Data.Functor (void, ($>), (<&>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import Debug.Trace (traceShowId)
+import Debug.Trace (traceShowId, traceShow)
 import Neorg.Document
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Internal as P
+import Data.Void (Void)
 
 embedParser :: (MonadFail m, P.ShowErrorComponent e) => P.Parsec e Text a -> Text -> m a
 embedParser p t = do
@@ -76,8 +77,18 @@ consumingTry p = P.ParsecT $ \s cok _ eok eerr ->
 
 viewChar :: P.MonadParsec e Text p => p ()
 viewChar = do
-  !c <- traceShowId <$> lookChar
+  !_c <- traceShowId <$> lookChar
   pure ()
+
+viewN :: P.MonadParsec e Text p => Int -> p ()
+viewN i = do
+  !_c <- traceShowId <$> followedBy (P.takeP Nothing i) <|> pure "EOF reached"
+  pure ()
+
+message :: (Show s, Monad p ) => s -> p ()
+message msg = do
+  !_msg <- pure (traceShow (show msg) ())
+  pure _msg
 
 textWord :: P.MonadParsec e Text p => p Text
 textWord = P.takeWhile1P (Just "Text word") (\c -> c /= ' ' && c /= '\n' && c /= '\r')
@@ -115,6 +126,12 @@ manyOrEnd :: (Monad f, Alternative f) => f () -> f a -> f end -> f [a]
 manyOrEnd s p e = do
   s
   e $> [] <|> (:) <$> p <*> manyOrEnd s p e <|> pure []
+
+noParse :: (P.MonadParsec e Text p) => p a -> p ()
+noParse p = ((P.try p $> False) <|> pure True) >>= guard
+
+debugParse :: Show a => P.Parsec Void Text a -> Text -> IO ()
+debugParse p s = print $ P.parse p "debug" s
 
 -- data Embed (s :: *) a = Embed {embedState :: s, embedInfo :: a s}
 --

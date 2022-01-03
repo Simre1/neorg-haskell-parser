@@ -136,6 +136,7 @@ strongDelimiter = do
 quote :: Parser p Quote
 quote =
   P.try (repeatingLevel '>' >-> singleSpace) >>= \l ->
+  
     singleLineParagraph <&> \c -> QuoteCons {_quoteLevel = l, _quoteContent = c}
 
 marker :: Parser p Marker

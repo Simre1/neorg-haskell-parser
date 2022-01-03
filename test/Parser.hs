@@ -72,6 +72,24 @@ tagTests =
                         TableRowInlines $ V.fromList [ConcatInline $ V.fromList [Text "The", Space, Text "above", Space, Text "line", Space, Text "marks", Space, Text "a", Space, Text "delimiter"]]
                       ]
                 )
+            ),
+      testCase "Table with empty cells" $
+        parse
+          (tag @(FromList '["table"]))
+          "@table\n\
+          \A | B\n\
+          \  | C\n\
+          \@end"
+          @?= Just
+            ( SomeTag
+                (Proxy @"table")
+                ()
+                ( Table $
+                    V.fromList
+                      [ TableRowInlines $ V.fromList [Text "A", Text "B"],
+                        TableRowInlines $ V.fromList [ConcatInline V.empty, Text "C"]
+                      ]
+                )
             )
     ]
 
@@ -139,7 +157,10 @@ paragraphTests =
       testCase "Single-Line intersecting Spoiler" $ parse singleLineParagraph ":|spoiler|:" @?= Spoiler (Text "spoiler"),
       testCase "Single-Line intersecting Math" $ parse singleLineParagraph ":$math$:" @?= Math "math",
       testCase "Single-Line intersecting Verbatim" $ parse singleLineParagraph ":`verbatim`:" @?= Verbatim "verbatim",
-      testCase "Escape bold character" $ parse singleLineParagraph "\\*test*" @?= Text "*test*"
+      testCase "Escape bold character" $ parse singleLineParagraph "\\*test*" @?= Text "*test*",
+      testCase "Verbatim ," $ parse singleLineParagraph ",`,`" @?= ConcatInline (V.fromList [Text ",", Verbatim ","]),
+      testCase "Verbatim , 2" $ parse singleLineParagraph "\\{`,`,#}" @?= ConcatInline (V.fromList [Text "{",Verbatim ",",Text ",#}"])
+      
     ]
 
 markerTests :: TestTree

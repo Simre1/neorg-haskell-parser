@@ -10,7 +10,7 @@ import Control.Monad.Trans.State
     gets,
     modify,
   )
-import Data.Char (isLetter)
+import Data.Char (isAlphaNum, isLetter)
 import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -50,10 +50,10 @@ runInline p = fmap canonalizeInline $ do
 paragraph' :: forall p e. (ParserC e p) => StateT InlineState p () -> StateT InlineState p ()
 paragraph' end' =
   (end >> pure ())
-    <|> (lookChar >>= \c -> intersectingModifier c <|> attachedOpenings c <|> word c)
+    <|> (P.hspace >> lookChar >>= \c -> intersectingModifier c <|> attachedOpenings c <|> word c)
   where
     end =
-      P.lookAhead end' <|> P.eof
+      end' <|> P.eof
     appendInlineToStack :: Inline -> StateT InlineState p ()
     appendInlineToStack t =
       modify $
@@ -119,10 +119,10 @@ paragraph' end' =
               (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
         parseOpening c = do
           P.try $ do
-            anyChar >> withNextChar (\c' -> guard $ isLetter c' || S.member c' specialSymbols)
+            anyChar >> withNextChar (\c' -> guard $ (isAlphaNum c' || isLetter c') || S.member c' specialSymbols)
             pushStack c
-          modify (delimitedActive .~ False)
-          withNextChar (\c -> P.choice [attachedOpenings c, word c])
+            modify (delimitedActive .~ False)
+            withNextChar (\c -> P.choice [attachedOpenings c, word c])
 
     attachedClosings :: Char -> StateT InlineState p ()
     attachedClosings = \case
@@ -163,7 +163,7 @@ paragraph' end' =
                 appendInlineToStack
                   (Text $ T.pack [x])
                 withNextChar $
-                  \c' -> parWhitespace c' <|> attachedClosings c' <|> word c'
+                  \c' -> parWhitespace c' <|> attachedClosings c' <|> attachedOpenings c' <|> word c'
           )
             <|> ( do
                     p <- lift anyChar <&> T.pack . (: [])
@@ -241,11 +241,29 @@ paragraph' end' =
         next = do
           P.hspace
           withNextChar (\c' -> parWhitespace c' <|> attachedOpenings c' <|> word c')
+    link :: Char -> StateT InlineState p ()
+    link = \case
+      '{' -> do
+        target <- linkTarget
+        text <- linkText
+        pure ()
+      _ -> fail "No link"
+      where
+        linkTarget = do
+          _ <- P.char '{'
+          text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= '}' && c /= '\n' && c /= '\r')
+          _ <- P.char '}'
+          pure $ LinkTargetUrl text
+        linkText = do
+          _ <- P.char '{'
+          text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= '}' && c /= '\n' && c /= '\r')
+          _ <- P.char '}'
+          pure $ LinkTargetUrl text
 
 paragraph :: Parser p Inline
 paragraph = runInline $ do
   modify $ delimitedActive .~ False
-  paragraph' $
+  paragraph' $ P.lookAhead $ 
     doubleNewline
       <|> P.try
         ( do
@@ -256,4 +274,4 @@ paragraph = runInline $ do
 singleLineParagraph :: Parser p Inline
 singleLineParagraph = runInline $ do
   modify $ delimitedActive .~ False
-  paragraph' (void newline)
+  paragraph' (P.lookAhead $ void newline)

@@ -56,25 +56,32 @@ instance ParseTagContent "table" where
     rows <- manyV row
     pure $ Table rows
     where
-      cell = P.notFollowedBy (P.eof <|> void newline) >> cellParagraph >-> P.hspace
+      cell = do
+        P.notFollowedBy (P.eof <|> void newline) >> cellParagraph
       row =
         let inlines = do
-              P.hspace
               cells <- manyV cell
-              newline
+              newline <|> P.eof
               pure $ TableRowInlines cells
             delimiter = do
-              P.char '-'
+              _ <- P.char '-'
               P.hspace
               newline
               pure TableRowDelimiter
-         in P.try delimiter <|> inlines
-      cellParagraph = runInline $ do
-        modify $ delimitedActive .~ False
-        let end =
-              void (P.string " | ")
-                <|> P.try
-                  (P.string " |" >> P.lookAhead (void newline <|> P.eof))
-                <|> void (P.lookAhead newline)
-        paragraph' end
-        end
+         in P.try (P.lookAhead P.hspace >> noParse P.eof) >> P.try delimiter <|> inlines
+      cellParagraph =
+        runInline $ do
+          modify $ delimitedActive .~ False
+          paragraph' end
+      end = 
+        P.try
+          ( do  
+              P.hspace1
+              _ <- P.char '|'
+              P.lookAhead (void $ P.char ' ') <|> P.lookAhead newline <|> P.eof
+          )
+          <|> P.try
+            ( do
+                P.hspace
+                P.lookAhead $ void newline <|> P.eof
+            )
