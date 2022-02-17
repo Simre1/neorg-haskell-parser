@@ -3,6 +3,9 @@
 
 module Neorg.Parser.Utils where
 
+import Cleff
+import Cleff.Reader
+import Cleff.State
 import Control.Applicative (Alternative (many, (<|>)))
 import Control.Monad (guard)
 import Control.Monad.Trans.Class (lift)
@@ -11,12 +14,13 @@ import Data.Functor (void, ($>), (<&>))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import Debug.Trace (traceShowId, traceShow)
+import Data.Void (Void)
+import Debug.Trace (traceShow, traceShowId)
 import Neorg.Document
+import Neorg.Parser.Types
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Internal as P
-import Data.Void (Void)
 
 embedParser :: (MonadFail m, P.ShowErrorComponent e) => P.Parsec e Text a -> Text -> m a
 embedParser p t = do
@@ -85,7 +89,7 @@ viewN i = do
   !_c <- traceShowId <$> followedBy (P.takeP Nothing i) <|> pure "EOF reached"
   pure ()
 
-message :: (Show s, Monad p ) => s -> p ()
+message :: (Show s, Monad p) => s -> p ()
 message msg = do
   !_msg <- pure (traceShow (show msg) ())
   pure _msg
@@ -132,6 +136,34 @@ noParse p = ((P.try p $> False) <|> pure True) >>= guard
 
 debugParse :: Show a => P.Parsec Void Text a -> Text -> IO ()
 debugParse p s = print $ P.parse p "debug" s
+
+mapParserMonad :: forall f g e s o. (forall x. f x -> g x) -> (forall x. g x -> f x) -> P.ParsecT e s f o -> P.ParsecT e s g o
+mapParserMonad to from p = P.ParsecT $ \s cok cerr eok eerr ->
+  to $ P.unParser p s (f3 cok) (f2 cerr) (f3 eok) (f2 eerr)
+  where
+    f2 :: forall a b x. (a -> b -> g x) -> a -> b -> f x
+    f2 f a b = from $ f a b
+    f3 :: forall a b c x. (a -> b -> c -> g x) -> a -> b -> c -> f x
+    f3 f a b c = from $ f a b c
+
+runParserEffect :: (Eff (e ': es) ~> Eff es) -> P.ParsecT err s (Eff (e ': es)) ~> P.ParsecT err s (Eff es)
+runParserEffect runHandler = mapParserMonad runHandler raise
+
+runParserState :: s -> Parser (State s ': es) ~> Parser es
+runParserState s = runParserEffect (fmap fst . runState s)
+
+runParserReader :: r -> Parser (Reader r ': es) ~> Parser es
+runParserReader r = runParserEffect (runReader r)
+
+readOnlyState :: forall s es. Parser (Reader s ': es) ~> Parser (State s ': es)
+readOnlyState = mapParserMonad to from
+  where
+    to p = do
+      s <- get
+      raise $ runReader s p
+    from p = do
+      s <- ask
+      fmap fst . raise $ runState s p
 
 -- data Embed (s :: *) a = Embed {embedState :: s, embedInfo :: a s}
 --

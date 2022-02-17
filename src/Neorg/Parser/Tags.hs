@@ -44,7 +44,7 @@ instance ParseTagContent "document.meta" where
         _ -> meta
       metaItem = do
         field <- P.takeWhileP (Just "meta item") (\c -> c /= ':' && c /= '\n' && c /= '\n')
-        P.char ':'
+        _ <- P.char ':'
         value <- T.strip <$> P.takeWhileP (Just "meta field") (\c -> c /= '\n' && c /= '\r')
         clearBlankSpace
         case value of
@@ -73,9 +73,9 @@ instance ParseTagContent "table" where
         runInline $ do
           modify $ delimitedActive .~ False
           paragraph' end
-      end = 
+      end =
         P.try
-          ( do  
+          ( do
               P.hspace1
               _ <- P.char '|'
               P.lookAhead (void $ P.char ' ') <|> P.lookAhead newline <|> P.eof

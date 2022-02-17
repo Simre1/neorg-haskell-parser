@@ -1,8 +1,7 @@
 module Parser where
 
-import Control.Monad.Trans.Reader (ReaderT (runReaderT))
-import Control.Monad.Trans.State (evalStateT)
-import Control.Monad.Trans.State.Lazy (StateT)
+import Cleff (Eff, runPure)
+import Cleff.State (State)
 import Data.Data (Proxy (..))
 import Data.Text (Text)
 import Data.Time (defaultTimeLocale, parseTimeM)
@@ -15,9 +14,9 @@ import Test.Tasty.HUnit (testCase, (@?=))
 import qualified Text.Megaparsec as P
 import Type.Set (FromList, TypeSet (Empty))
 
-parse :: StateT CurrentHeadingLevel (P.Parsec Void Text) a -> Text -> a
+parse :: P.ParsecT Void Text (Eff '[State CurrentHeadingLevel]) a -> Text -> a
 parse p i =
-  let res = P.runParser (evalStateT p (CurrentHeadingLevel I0)) "test" i
+  let res = runPure $ P.runParserT (runParserState (CurrentHeadingLevel I0) p) "test" i
    in either (error . P.errorBundlePretty) id res
 
 parserTests :: TestTree
@@ -159,8 +158,7 @@ paragraphTests =
       testCase "Single-Line intersecting Verbatim" $ parse singleLineParagraph ":`verbatim`:" @?= Verbatim "verbatim",
       testCase "Escape bold character" $ parse singleLineParagraph "\\*test*" @?= Text "*test*",
       testCase "Verbatim ," $ parse singleLineParagraph ",`,`" @?= ConcatInline (V.fromList [Text ",", Verbatim ","]),
-      testCase "Verbatim , 2" $ parse singleLineParagraph "\\{`,`,#}" @?= ConcatInline (V.fromList [Text "{",Verbatim ",",Text ",#}"])
-      
+      testCase "Verbatim , 2" $ parse singleLineParagraph "\\{`,`,#}" @?= ConcatInline (V.fromList [Text "{", Verbatim ",", Text ",#}"])
     ]
 
 markerTests :: TestTree
@@ -177,7 +175,7 @@ listTests =
   testGroup
     "List tests"
     [ testCase "Single unordered item" $
-        parse (runReaderT (unorderedList @'Empty) (CurrentListLevel I0)) "- test1"
+        parse (runParserReader (CurrentListLevel I0) (unorderedList @'Empty)) "- test1"
           @?= UnorderedListCons
             { _uListLevel = I0,
               _uListItems =
@@ -186,7 +184,7 @@ listTests =
                   $ Paragraph (Text "test1")
             },
       testCase "Two unordered items" $
-        parse (runReaderT (unorderedList @'Empty) (CurrentListLevel I0)) "- test1\n- test2"
+        parse (runParserReader (CurrentListLevel I0) (unorderedList @'Empty)) "- test1\n- test2"
           @?= UnorderedListCons
             { _uListLevel = I0,
               _uListItems =
@@ -198,7 +196,7 @@ listTests =
                   ]
             },
       testCase "Ordered List" $
-        parse (runReaderT (orderedList @'Empty) (CurrentListLevel I0)) "~~ test1\n~~ test2"
+        parse (runParserReader (CurrentListLevel I0) (orderedList @'Empty)) "~~ test1\n~~ test2"
           @?= OrderedListCons
             { _oListLevel = I1,
               _oListItems =
@@ -210,7 +208,7 @@ listTests =
                   ]
             },
       testCase "Task List" $
-        parse (runReaderT (taskList @'Empty) (CurrentListLevel I0)) "- [x] Done\n- [*] Pending"
+        parse (runParserReader (CurrentListLevel I0) (taskList @'Empty)) "- [x] Done\n- [*] Pending"
           @?= TaskListCons
             { _tListLevel = I0,
               _tListItems =

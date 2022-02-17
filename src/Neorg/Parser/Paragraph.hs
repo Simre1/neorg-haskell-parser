@@ -122,7 +122,7 @@ paragraph' end' =
             anyChar >> withNextChar (\c' -> guard $ (isAlphaNum c' || isLetter c') || S.member c' specialSymbols)
             pushStack c
             modify (delimitedActive .~ False)
-            withNextChar (\c -> P.choice [attachedOpenings c, word c])
+            withNextChar (\cn -> P.choice [attachedOpenings cn, word cn])
 
     attachedClosings :: Char -> StateT InlineState p ()
     attachedClosings = \case
@@ -263,13 +263,14 @@ paragraph' end' =
 paragraph :: Parser p Inline
 paragraph = runInline $ do
   modify $ delimitedActive .~ False
-  paragraph' $ P.lookAhead $ 
-    doubleNewline
-      <|> P.try
-        ( do
-            gets (view delimitedActive) >>= guard
-            isMarkupElement >>= guard
-        )
+  paragraph' $
+    P.lookAhead $
+      doubleNewline
+        <|> P.try
+          ( do
+              gets (view delimitedActive) >>= guard
+              isMarkupElement >>= guard
+          )
 
 singleLineParagraph :: Parser p Inline
 singleLineParagraph = runInline $ do

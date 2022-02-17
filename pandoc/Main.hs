@@ -5,6 +5,7 @@ import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy as B
 import Data.Foldable (fold)
 import Data.Functor ((<&>))
+import Data.Maybe (maybeToList)
 import qualified Data.Sequence as S
 import Data.Text (Text, pack)
 import qualified Data.Text.IO as T
@@ -115,9 +116,9 @@ type SupportedTags = FromList '["code", "math", "comment", "embed", "document.me
 tagHandler :: TagHandler SupportedTags (Convert P.Blocks)
 tagHandler = code `mergeHandler` math `mergeHandler` comment `mergeHandler` embed `mergeHandler` documentMeta `mergeHandler` table
   where
-    code = handleTag @"code" $ \_language text -> pure $ P.codeBlock text
+    code = handleTag @"code" $ \language text -> pure $ P.codeBlockWith ("", maybeToList language, []) text
     math = handleTag @"math" $ \_ text -> pure $ P.plain $ P.displayMath text
-    comment = handleTag @"comment" $ \_ text -> pure mempty
+    comment = handleTag @"comment" $ \_ _text -> pure mempty
     embed = handleTag @"embed" $ \_embedType url -> pure $ P.plain $ P.image url "" mempty
     documentMeta = handleTag @"document.meta" $ \_ _ -> pure mempty
     table = handleTag @"table" $ \_ (Table rows) ->

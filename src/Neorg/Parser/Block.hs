@@ -1,18 +1,17 @@
-{-# LANGUAGE BangPatterns #-}
-
 module Neorg.Parser.Block where
 
-import Control.Applicative (Alternative (many, (<|>)), empty)
+import Cleff
+import Cleff.Reader
+import Cleff.State
+import Control.Applicative (Alternative (many, (<|>)))
 import Control.Monad (guard, void)
-import Control.Monad.GetPut
-import Control.Monad.Trans.Reader (ReaderT (runReaderT))
+import Control.Monad.Trans.Class
 import Data.Char (isLetter)
 import Data.Foldable (Foldable (foldl'))
 import Data.Functor (($>), (<&>))
 import Data.Maybe (catMaybes, maybeToList)
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import Debug.Trace
 import Neorg.Document
 import Neorg.Document.Tag
 import Neorg.Parser.Paragraph
@@ -25,7 +24,7 @@ newtype CurrentListLevel = CurrentListLevel IndentationLevel deriving newtype (S
 
 newtype CurrentHeadingLevel = CurrentHeadingLevel IndentationLevel deriving newtype (Show, Eq, Ord, Enum)
 
-pureBlockWithoutParagraph :: (Get CurrentListLevel p, GenerateTagParser tags) => Parser p (Maybe (PureBlock tags))
+pureBlockWithoutParagraph :: (Reader CurrentListLevel :> es, GenerateTagParser tags) => Parser es (Maybe (PureBlock tags))
 pureBlockWithoutParagraph = do
   lookChar >>= \case
     '-' -> pure . List . TaskList <$> taskList <|> pure . List . UnorderedList <$> unorderedList
@@ -34,14 +33,14 @@ pureBlockWithoutParagraph = do
     '@' -> fmap Tag <$> tag
     _ -> fail "Not a pure block"
 
-pureBlock :: (GenerateTagParser tags, Get CurrentListLevel p) => Parser p (Maybe (PureBlock tags))
+pureBlock :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (Maybe (PureBlock tags))
 pureBlock = do
   markupElement <- isMarkupElement
   if markupElement
     then pureBlockWithoutParagraph
     else pure . Paragraph <$> paragraph
 
-blocks :: (GenerateTagParser tags, Modify CurrentHeadingLevel p) => Parser p (Blocks tags)
+blocks :: (GenerateTagParser tags, State CurrentHeadingLevel :> es) => Parser es (Blocks tags)
 blocks = do
   blocks' <- P.many $ do
     P.try $ do
@@ -50,11 +49,11 @@ blocks = do
     block
   pure $ V.fromList $ mconcat blocks'
 
-block :: (GenerateTagParser tags, Modify CurrentHeadingLevel p) => Parser p [Block tags]
+block :: (GenerateTagParser tags, State CurrentHeadingLevel :> es) => Parser es [Block tags]
 block = do
   isMarkup <- isMarkupElement
   if isMarkup
-    then impureBlock <|> maybeToList . fmap PureBlock <$> runReaderT pureBlockWithoutParagraph (CurrentListLevel I0)
+    then impureBlock <|> maybeToList . fmap PureBlock <$> runParserReader (CurrentListLevel I0) pureBlockWithoutParagraph
     else pure . PureBlock . Paragraph <$> paragraph
   where
     impureBlock =
@@ -89,13 +88,13 @@ tag = do
 horizonalLine :: Parser p ()
 horizonalLine = P.try $ repeating '_' >>= guard . (> 2) >> P.hspace >> lNewline
 
-unorderedList :: forall tags p. (Get CurrentListLevel p, GenerateTagParser tags) => Parser p (UnorderedList tags)
+unorderedList :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (UnorderedList tags)
 unorderedList = makeListParser '-' (pure ()) $ \l' v -> UnorderedListCons {_uListLevel = l', _uListItems = fmap snd v}
 
-orderedList :: forall tags p. (Get CurrentListLevel p, GenerateTagParser tags) => Parser p (OrderedList tags)
+orderedList :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (OrderedList tags)
 orderedList = makeListParser '~' (pure ()) $ \l' v -> OrderedListCons {_oListLevel = l', _oListItems = fmap snd v}
 
-taskList :: forall tags p. (Get CurrentListLevel p, GenerateTagParser tags) => Parser p (TaskList tags)
+taskList :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (TaskList tags)
 taskList = makeListParser '-' parseTask $ \l' v -> TaskListCons {_tListLevel = l', _tListItems = v}
   where
     parseTask = do
@@ -105,9 +104,9 @@ taskList = makeListParser '-' parseTask $ \l' v -> TaskListCons {_tListLevel = l
       _ <- P.char ' '
       pure status
 
-makeListParser :: (Get CurrentListLevel p, GenerateTagParser tags) => Char -> Parser p a -> (IndentationLevel -> V.Vector (a, V.Vector (PureBlock tags)) -> l) -> Parser p l
+makeListParser :: (Reader CurrentListLevel :> es, GenerateTagParser tags) => Char -> Parser es a -> (IndentationLevel -> V.Vector (a, V.Vector (PureBlock tags)) -> l) -> Parser es l
 makeListParser c p f = do
-  CurrentListLevel minLevel <- envGet
+  CurrentListLevel minLevel <- lift ask
   (level, a) <- P.try $ repeatingLevel c >>= \l -> guard (l >= minLevel) >> singleSpace >> p <&> (l,)
   items1 <- P.hspace >> listBlock (CurrentListLevel level)
   itemsN <- many $ listItem level
@@ -119,24 +118,22 @@ makeListParser c p f = do
       pure (a, items)
     listBlock :: GenerateTagParser tags => CurrentListLevel -> Parser p (V.Vector (PureBlock tags))
     listBlock currentLevel = do
-
-      pureBlocks <- catMaybes <$> manyOrEnd P.hspace (P.try $ clearBlankSpace >> runReaderT pureBlock (succ currentLevel)) doubleNewline
+      pureBlocks <- catMaybes <$> manyOrEnd P.hspace (P.try $ clearBlankSpace >> runParserReader (succ currentLevel) pureBlock) doubleNewline
       pure $ V.fromList pureBlocks
 
-weakDelimiter :: Modify CurrentHeadingLevel p => Parser p ()
+weakDelimiter :: State CurrentHeadingLevel :> es => Parser es ()
 weakDelimiter = do
   P.try (repeating '-' >> P.hspace >> newline)
-  envModify @CurrentHeadingLevel pred
+  lift $ modify @CurrentHeadingLevel pred
 
-strongDelimiter :: Put CurrentHeadingLevel p => Parser p ()
+strongDelimiter :: State CurrentHeadingLevel :> es => Parser es ()
 strongDelimiter = do
   P.try (repeating '=' >> P.hspace >> newline)
-  envPut $ CurrentHeadingLevel I0
+  lift $ put $ CurrentHeadingLevel I0
 
 quote :: Parser p Quote
 quote =
   P.try (repeatingLevel '>' >-> singleSpace) >>= \l ->
-  
     singleLineParagraph <&> \c -> QuoteCons {_quoteLevel = l, _quoteContent = c}
 
 marker :: Parser p Marker
@@ -147,9 +144,9 @@ marker = do
   let markerText' = foldl' (\acc r -> acc <> " " <> T.toLower r) first rest
   pure $ MarkerCons {_markerId = markerId', _markerText = markerText'}
 
-headingWithDelimiter :: (Modify CurrentHeadingLevel p, GenerateTagParser tags) => Parser p [Block tags]
+headingWithDelimiter :: (State CurrentHeadingLevel :> es, GenerateTagParser tags) => Parser es [Block tags]
 headingWithDelimiter = do
-  CurrentHeadingLevel currentLevel <- envGet
+  CurrentHeadingLevel currentLevel <- lift get
   h@(HeadingCons _ headingLevel') <- heading
   let delimiters = case (currentLevel, headingLevel') of
         (I0, I0) -> []
@@ -159,10 +156,10 @@ headingWithDelimiter = do
         _ -> [Delimiter WeakDelimiter | currentLevel > headingLevel']
   pure $ delimiters ++ [Heading h]
 
-heading :: Modify CurrentHeadingLevel p => Parser p Heading
+heading :: State CurrentHeadingLevel :> es => Parser es Heading
 heading = do
   (level, text) <- headingText'
-  envPut $ CurrentHeadingLevel $ succ level
+  lift $ put $ CurrentHeadingLevel $ succ level
   pure $ HeadingCons text level
   where
     headingText' = do
@@ -180,9 +177,9 @@ definition =
       _ <- P.try $ P.string "$ "
       definitionObject' <- singleLineParagraph
       P.hspace >> newline
-      DefinitionCons definitionObject' . V.fromList . maybeToList <$> runReaderT pureBlock (CurrentListLevel I0)
+      DefinitionCons definitionObject' . V.fromList . maybeToList <$> runParserReader (CurrentListLevel I0) pureBlock
     multiLineDefinition = do
       _ <- P.try $ P.string "$$ "
       definitionObject' <- singleLineParagraph
-      pureBlocks <- catMaybes <$> manyOrEnd clearBlankSpace (runReaderT pureBlock (CurrentListLevel I0)) (void (P.string "$$") <|> P.eof)
+      pureBlocks <- catMaybes <$> manyOrEnd clearBlankSpace (runParserReader (CurrentListLevel I0) pureBlock) (void (P.string "$$") <|> P.eof)
       pure $ DefinitionCons definitionObject' $ V.fromList pureBlocks

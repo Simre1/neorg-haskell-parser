@@ -4,13 +4,17 @@
 
 module Neorg.Parser.Types where
 
+import Cleff
 import Data.Default (Default, def)
 import Data.Text (Text)
+import Data.Void
 import Neorg.Document
 import Optics.TH (makeLenses)
 import qualified Text.Megaparsec as P
 
-type Parser m a = forall e. ParserC e m => m a
+type Parser effs = P.ParsecT Void Text (Eff effs)
+
+-- type Parser m a = forall e. ParserC e m => m a
 
 type ParserC e m = (P.MonadParsec e Text m, MonadFail m, Ord e, P.ShowErrorComponent e)
 

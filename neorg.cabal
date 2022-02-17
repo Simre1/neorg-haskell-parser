@@ -49,14 +49,14 @@ common common
 
 library
     import: common
-    exposed-modules:  Neorg, Neorg.Document, Neorg.Parser.Main, Neorg.Parser.Paragraph, Neorg.Document.Tag, Type.Set, Neorg.Parser.Utils, Neorg.Parser.Types, Neorg.Parser.Block, Neorg.Parser.Tags, Type.Forall, Control.Monad.GetPut
+    exposed-modules:  Neorg, Neorg.Document, Neorg.Parser.Main, Neorg.Parser.Paragraph, Neorg.Document.Tag, Type.Set, Neorg.Parser.Utils, Neorg.Parser.Types, Neorg.Parser.Block, Neorg.Parser.Tags, Type.Forall
 
     -- Modules included in this library but not exported.
     -- other-modules:
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.14.2.0, text, vector, containers, megaparsec, time, transformers, optics-core, optics-th, data-default
+    build-depends:    base ^>=4.14.2.0, text, vector, containers, megaparsec, time, transformers, optics-core, optics-th, data-default, cleff, cleff
     hs-source-dirs:   src
     -- include-dirs: tree-sitter-norg/src
     -- c-sources: tree-sitter-norg/src/parser.c, tree-sitter-norg/src/scanner.cc
@@ -75,4 +75,4 @@ test-suite test
     main-is:    Main.hs
     other-modules: Parser
     hs-source-dirs: test
-    build-depends: neorg, tasty, tasty-hunit, base, text, megaparsec, transformers, vector, optics-core, time
+    build-depends: neorg, tasty, tasty-hunit, base, text, megaparsec, transformers, vector, optics-core, time, cleff
