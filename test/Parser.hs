@@ -158,7 +158,8 @@ paragraphTests =
       testCase "Single-Line intersecting Verbatim" $ parse singleLineParagraph ":`verbatim`:" @?= Verbatim "verbatim",
       testCase "Escape bold character" $ parse singleLineParagraph "\\*test*" @?= Text "*test*",
       testCase "Verbatim ," $ parse singleLineParagraph ",`,`" @?= ConcatInline (V.fromList [Text ",", Verbatim ","]),
-      testCase "Verbatim , 2" $ parse singleLineParagraph "\\{`,`,#}" @?= ConcatInline (V.fromList [Text "{", Verbatim ",", Text ",#}"])
+      testCase "Verbatim , 2" $ parse singleLineParagraph "\\{`,`,#}" @?= ConcatInline (V.fromList [Text "{", Verbatim ",", Text ",#}"]),
+      testCase "Hyperlink" $ parse paragraph "{https://example.com}[example]" @?= Link (LinkCons (LinkTargetUrl "https://example.com") (Just $ Text "example") Nothing)
     ]
 
 markerTests :: TestTree

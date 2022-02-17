@@ -8,10 +8,8 @@ import Data.Maybe (isJust)
 import Data.Text as T (Text)
 import Data.Time.Calendar (Day)
 import qualified Data.Vector as V
-import Data.Void (Void)
 import GHC.TypeLits (KnownSymbol, Symbol, sameSymbol, symbolVal)
 import Optics.TH (makeLenses)
-import qualified Text.Megaparsec as P
 import Type.Forall (Forall)
 import Type.Set (TypeSet)
 import Unsafe.Coerce (unsafeCoerce)
@@ -147,6 +145,7 @@ data LinkTarget
   | LinkTargetUrl T.Text
   | LinkTargetNorgFile File
   | LinkTargetFile File
+  | LinkTargetAny TargetId
   deriving (Show, Eq)
 
 data File = Relative T.Text | Absolute T.Text | CurrentWorkspace T.Text | WorkSpace T.Text T.Text
@@ -191,14 +190,9 @@ canonalizeInline = \case
       (Space : r) -> Space : processInlines r
       [] -> []
 
-type TagParser = P.Parsec Void Text
-
 class (KnownSymbol a, Eq (TagArguments a), Eq (TagContent a), Show (TagArguments a), Show (TagContent a)) => Tag (a :: Symbol) where
   type TagArguments a
   type TagContent a
-
-class Tag a => ParseTagContent (a :: Symbol) where
-  parseTagContent :: f a -> TagArguments a -> TagParser (TagContent a)
 
 data SomeTag (tags :: TypeSet) where
   SomeTag :: Tag t => Proxy t -> TagArguments t -> TagContent t -> SomeTag tags

@@ -13,8 +13,8 @@ import Data.Maybe (catMaybes, maybeToList)
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Neorg.Document
-import Neorg.Document.Tag
 import Neorg.Parser.Paragraph
+import Neorg.Parser.Tags.Classes
 import Neorg.Parser.Types
 import Neorg.Parser.Utils
 import qualified Text.Megaparsec as P
@@ -66,7 +66,7 @@ block = do
         '$' -> pure . Definition <$> definition
         _ -> fail "Not a delimiter and not a heading"
 
-tag :: forall tags p. GenerateTagParser tags => Parser p (Maybe (SomeTag tags))
+tag :: forall tags es. GenerateTagParser tags => Parser es (Maybe (SomeTag tags))
 tag = do
   tagName <- P.try $ do
     t <- P.char '@' >> P.takeWhileP (Just "Tag description") (\c -> isLetter c || c == '.')
@@ -82,7 +82,7 @@ tag = do
         content <- textContent
         case parseTag @tags tagName of
           Nothing -> pure Nothing
-          Just tagParser -> Just <$> embedParser tagParser content
+          Just tagParser -> Just <$> embedParserT tagParser content
     ]
 
 horizonalLine :: Parser p ()

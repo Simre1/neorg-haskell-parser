@@ -14,11 +14,9 @@ import qualified Text.Megaparsec as P
 
 type Parser effs = P.ParsecT Void Text (Eff effs)
 
--- type Parser m a = forall e. ParserC e m => m a
+-- type ParserC e m = (P.MonadParsec e Text m, MonadFail m, Ord e, P.ShowErrorComponent e)
 
-type ParserC e m = (P.MonadParsec e Text m, MonadFail m, Ord e, P.ShowErrorComponent e)
-
-type ParserE e m a = ParserC e m => m a
+-- type ParserE e m a = ParserC e m => m a
 
 data ParserState = ParserState
   { _parserHeadingLevel :: IndentationLevel,
@@ -29,21 +27,5 @@ data ParserState = ParserState
 
 makeLenses ''ParserState
 
--- type Parser = P.ParsecT Void Text (State ParserState)
-
 instance Default ParserState where
   def = ParserState I0 I0 emptyDocumentMeta
-
---
--- newtype PureBlockInfo = PureBlockInfo {_pureBlockListLevel :: IndentationLevel}
---
--- instance Default PureBlockInfo where
---   def = PureBlockInfo I0
---
--- newtype BlockInfo = BlockInfo {_blockPureBlockInfo :: PureBlockInfo}
---
--- instance Default BlockInfo where
---   def = BlockInfo def
---
--- makeLenses 'BlockInfo
--- makeLenses 'PureBlockInfo

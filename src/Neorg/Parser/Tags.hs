@@ -1,8 +1,9 @@
-module Neorg.Parser.Tags where
+module Neorg.Parser.Tags (module Neorg.Parser.Tags.Classes) where
 
+import Cleff.State
 import Control.Applicative ((<|>))
 import Control.Monad (void)
-import Control.Monad.Trans.State (modify)
+import Control.Monad.Trans.Class (lift)
 import Data.Maybe (catMaybes)
 import qualified Data.Text as T
 import Data.Time (parseTimeM)
@@ -10,6 +11,7 @@ import Data.Time.Format (defaultTimeLocale)
 import qualified Data.Vector as V
 import Neorg.Document
 import Neorg.Parser.Paragraph
+import Neorg.Parser.Tags.Classes
 import Neorg.Parser.Utils
 import Optics.Core ((&), (.~), (?~))
 import qualified Text.Megaparsec as P
@@ -71,7 +73,7 @@ instance ParseTagContent "table" where
          in P.try (P.lookAhead P.hspace >> noParse P.eof) >> P.try delimiter <|> inlines
       cellParagraph =
         runInline $ do
-          modify $ delimitedActive .~ False
+          lift $ modify $ delimitedActive .~ False
           paragraph' end
       end =
         P.try

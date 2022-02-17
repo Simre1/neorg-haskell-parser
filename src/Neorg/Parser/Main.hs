@@ -13,10 +13,10 @@ import Control.Arrow (left)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Neorg.Document
-import Neorg.Document.Tag
+import Neorg.Document.Tag ()
 import Neorg.Parser.Block
 import Neorg.Parser.Paragraph
-import Neorg.Parser.Tags ()
+import Neorg.Parser.Tags
 import Neorg.Parser.Types
 import Neorg.Parser.Utils
 import qualified Text.Megaparsec as P

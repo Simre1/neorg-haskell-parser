@@ -21,16 +21,21 @@ import Neorg.Parser.Types
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Internal as P
+import Unsafe.Coerce (unsafeCoerce)
 
 embedParser :: (MonadFail m, P.ShowErrorComponent e) => P.Parsec e Text a -> Text -> m a
 embedParser p t = do
   let a = P.runParser p "Embed" t
   either (fail . P.errorBundlePretty) pure a
 
-embedParserT :: (Monad m, MonadFail m, P.Stream s, P.ShowErrorComponent e) => P.ParsecT e Text m a -> Text -> P.ParsecT e s m a
+embedParserT :: (es :>> moreEs) => Parser es a -> Text -> Parser moreEs a
 embedParserT p t = do
-  a <- lift $ P.runParserT p "Embed" t
+  a <- lift $ liftMore $ P.runParserT p "Embed" t
   either (fail . P.errorBundlePretty) pure a
+  where 
+    liftMore :: (es :>> moreEs) => Eff es a -> Eff moreEs a
+    liftMore = unsafeCoerce
+  
 
 many1 :: (Alternative f) => f a -> f [a]
 many1 p = (:) <$> p <*> many p

@@ -5,7 +5,7 @@ import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy as B
 import Data.Foldable (fold)
 import Data.Functor ((<&>))
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe, maybeToList)
 import qualified Data.Sequence as S
 import Data.Text (Text, pack)
 import qualified Data.Text.IO as T
@@ -14,6 +14,7 @@ import Neorg.Document
 import Neorg.Document.Tag
 import Neorg.Parser.Block (definition)
 import Neorg.Parser.Main
+import Neorg.Parser.Tags
 import Optics.Core ((<&>), (^.))
 import System.Environment (getArgs)
 import qualified Text.Pandoc.Builder as P
@@ -106,7 +107,11 @@ convertInline = \case
   Subscript inline -> P.subscript <$> convertInline inline
   Spoiler inline -> P.strikeout <$> convertInline inline -- TODO: No native spoilers in pandoc
   ConcatInline inlines -> V.foldMap id <$> traverse convertInline inlines
-  Link (LinkCons target inlines maybeId) -> applicativeConcatMap convertInline inlines -- TODO: Investigate title field
+  Link (LinkCons target inline maybeId) -> do
+    label <- traverse convertInline inline
+    case target of
+      LinkTargetUrl url -> pure $ P.link url "" (fromMaybe (P.text url) label)
+      _ -> pure $ P.text ""
   Space -> pure P.space
   Verbatim t -> pure $ P.code t
   Math t -> pure $ P.math t
@@ -118,7 +123,7 @@ tagHandler = code `mergeHandler` math `mergeHandler` comment `mergeHandler` embe
   where
     code = handleTag @"code" $ \language text -> pure $ P.codeBlockWith ("", maybeToList language, []) text
     math = handleTag @"math" $ \_ text -> pure $ P.plain $ P.displayMath text
-    comment = handleTag @"comment" $ \_ _text -> pure mempty
+    comment = handleTag @"comment" $ \_ text -> pure mempty
     embed = handleTag @"embed" $ \_embedType url -> pure $ P.plain $ P.image url "" mempty
     documentMeta = handleTag @"document.meta" $ \_ _ -> pure mempty
     table = handleTag @"table" $ \_ (Table rows) ->
