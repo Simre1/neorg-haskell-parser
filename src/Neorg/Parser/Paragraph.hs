@@ -245,17 +245,53 @@ paragraph' end' =
       '{' -> do
         P.try $ do
           target <- linkTarget
-          text <- linkText
-          appendInlineToStack $ Link $ LinkCons target (Just text) Nothing
+          text <- P.optional linkText
+          appendInlineToStack $ Link $ LinkCons target text Nothing
         pure ()
-      c -> do
+      _ -> do
         fail "No link"
       where
         linkTarget = do
           _ <- P.char '{'
-          text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= '}' && c /= '\n' && c /= '\r')
+          lt <-
+            (<|> LinkTargetUrl <$> rawText (== '}'))
+              . P.try
+              $ lookChar >>= \case
+                '@' -> P.char '@' >> P.hspace1 >> LinkTargetFile <$> file (== '}')
+                ':' -> do
+                  _ <- P.char ':'
+                  f <- file (== ':')
+                  _ <- P.char ':'
+                  target <- P.optional $ lookChar >>= linkTargetWithinDocument
+                  pure $ LinkTargetNorgFile f target
+                c -> LinkTargetCurrentDocument <$> linkTargetWithinDocument c
           _ <- P.char '}'
-          pure $ LinkTargetUrl text
+          pure lt
+        rawText endSymbol = do
+          txt <- T.strip <$> P.takeWhileP (Just "Inline Text modifier") (\c -> not (endSymbol c) && c /= '\n' && c /= '\r')
+          guard $ T.length txt > 0
+          pure txt
+        file endSymbol =
+          let currentWorkspace = (P.char '/' >> CurrentWorkspace <$> rawText endSymbol)
+              otherWorkspace = do
+                workspaceName <- P.takeWhile1P (Just "workspace name") (\c -> c /= '/' && c /= '\n' && c /= '\r')
+                _ <- P.char '/'
+                Workspace workspaceName <$> rawText endSymbol
+              absolute = P.char '/' >> Absolute <$> rawText endSymbol
+              relative = Relative <$> rawText endSymbol
+           in (P.char '$' >> currentWorkspace <|> otherWorkspace) <|> absolute <|> relative
+        linkTargetWithinDocument c = do
+          case c of
+            '*' -> do
+              lvl <- repeatingLevel '*' -- heading
+              P.hspace1
+              LinkTargetHeading lvl <$> targetName
+            '$' -> P.char '$' >> P.hspace1 >> LinkTargetDefinition <$> targetName
+            '^' -> P.char '^' >> P.hspace1 >> LinkTargetFootnote <$> targetName
+            '|' -> P.char '|' >> P.hspace1 >> LinkTargetMarker <$> targetName
+            '#' -> P.char '#' >> P.hspace1 >> LinkTargetAny <$> targetName
+            _ -> fail "no link target within document"
+        targetName = (TargetName <$> rawText (== '}'))
         linkText = do
           _ <- P.char '['
           para <- runInline $ do

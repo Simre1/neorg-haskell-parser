@@ -159,7 +159,32 @@ paragraphTests =
       testCase "Escape bold character" $ parse singleLineParagraph "\\*test*" @?= Text "*test*",
       testCase "Verbatim ," $ parse singleLineParagraph ",`,`" @?= ConcatInline (V.fromList [Text ",", Verbatim ","]),
       testCase "Verbatim , 2" $ parse singleLineParagraph "\\{`,`,#}" @?= ConcatInline (V.fromList [Text "{", Verbatim ",", Text ",#}"]),
-      testCase "Hyperlink" $ parse paragraph "{https://example.com}[example]" @?= Link (LinkCons (LinkTargetUrl "https://example.com") (Just $ Text "example") Nothing)
+      testCase "Hyperlink" $ parse paragraph "{https://example.com}[example]" @?= Link (LinkCons (LinkTargetUrl "https://example.com") (Just $ Text "example") Nothing),
+      testCase "Definition link" $
+        parse paragraph "{$     A link to a definition only}"
+          @?= Link
+            (LinkCons (LinkTargetCurrentDocument $ LinkTargetDefinition $ TargetName "A link to a definition only") Nothing Nothing),
+      testCase
+        "Heading link"
+        $ parse paragraph "{** Heading2}[Go to Heading]" @?= Link (LinkCons (LinkTargetCurrentDocument $ LinkTargetHeading I1 $ TargetName "Heading2") (Just (ConcatInline $ V.fromList [Text "Go", Space, Text "to", Space, Text "Heading"])) Nothing),
+      testCase
+        "Absolute file link"
+        $ parse paragraph "{@   /absolute/file}" @?= Link (LinkCons (LinkTargetFile $ Absolute "absolute/file") Nothing Nothing),
+      testCase
+        "Relative file link"
+        $ parse paragraph "{@ file}" @?= Link (LinkCons (LinkTargetFile $ Relative "file") Nothing Nothing),
+      testCase
+        "Current workspace file link"
+        $ parse paragraph "{@ $/file}" @?= Link (LinkCons (LinkTargetFile $ CurrentWorkspace "file") Nothing Nothing),
+      testCase
+        "Workspace file link"
+        $ parse paragraph "{@ $home/file}" @?= Link (LinkCons (LinkTargetFile $ Workspace "home" "file") Nothing Nothing),
+      testCase
+        "Norg link"
+        $ parse paragraph "{:file:}" @?= Link (LinkCons (LinkTargetNorgFile (Relative "file") Nothing) Nothing Nothing),
+      testCase
+        "Norg link with target"
+        $ parse paragraph "{:file:* Heading}" @?= Link (LinkCons (LinkTargetNorgFile (Relative "file") (Just $ LinkTargetHeading I0 $ TargetName "Heading")) Nothing Nothing)
     ]
 
 markerTests :: TestTree

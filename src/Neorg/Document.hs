@@ -133,22 +133,28 @@ data Inline
   | Space
   deriving (Show, Eq)
 
-data Link = LinkCons LinkTarget (Maybe Inline) (Maybe TargetId) | AnchorCons TargetId deriving (Show, Eq)
+data Link = LinkCons LinkTarget (Maybe Inline) (Maybe LinkName) | AnchorCons TargetName deriving (Show, Eq)
 
-newtype TargetId = TargetId T.Text deriving (Show, Eq)
+newtype LinkName = TargetId T.Text deriving (Show, Eq)
+
+newtype TargetName = TargetName T.Text deriving (Show, Eq)
 
 data LinkTarget
-  = LinkTargetHeading TargetId
-  | LinkTargetMarker TargetId
-  | LinkTargetFootnote TargetId
-  | LinkTargetDefinition TargetId
+  = LinkTargetCurrentDocument LinkTargetWithinDocument
   | LinkTargetUrl T.Text
-  | LinkTargetNorgFile File
+  | LinkTargetNorgFile File (Maybe LinkTargetWithinDocument)
   | LinkTargetFile File
-  | LinkTargetAny TargetId
   deriving (Show, Eq)
 
-data File = Relative T.Text | Absolute T.Text | CurrentWorkspace T.Text | WorkSpace T.Text T.Text
+data LinkTargetWithinDocument
+  = LinkTargetHeading IndentationLevel TargetName
+  | LinkTargetMarker TargetName
+  | LinkTargetFootnote TargetName
+  | LinkTargetDefinition TargetName
+  | LinkTargetAny TargetName
+  deriving (Eq, Show)
+
+data File = Relative T.Text | Absolute T.Text | CurrentWorkspace T.Text | Workspace T.Text T.Text
   deriving (Show, Eq)
 
 instance Semigroup Inline where

@@ -32,10 +32,9 @@ embedParserT :: (es :>> moreEs) => Parser es a -> Text -> Parser moreEs a
 embedParserT p t = do
   a <- lift $ liftMore $ P.runParserT p "Embed" t
   either (fail . P.errorBundlePretty) pure a
-  where 
+  where
     liftMore :: (es :>> moreEs) => Eff es a -> Eff moreEs a
     liftMore = unsafeCoerce
-  
 
 many1 :: (Alternative f) => f a -> f [a]
 many1 p = (:) <$> p <*> many p
