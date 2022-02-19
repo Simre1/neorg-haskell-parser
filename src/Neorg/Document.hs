@@ -13,6 +13,7 @@ import Optics.TH (makeLenses)
 import Type.Forall (Forall)
 import Type.Set (TypeSet)
 import Unsafe.Coerce (unsafeCoerce)
+import Data.Text (pack)
 
 newtype Document (tags :: TypeSet) = Document
   { _documentBlocks :: Blocks tags
@@ -137,7 +138,7 @@ data Link = LinkCons LinkTarget (Maybe Inline) (Maybe LinkName) | AnchorCons Tar
 
 newtype LinkName = TargetId T.Text deriving (Show, Eq)
 
-newtype TargetName = TargetName T.Text deriving (Show, Eq)
+newtype TargetName = TargetName Inline deriving (Show, Eq)
 
 data LinkTarget
   = LinkTargetCurrentDocument LinkTargetWithinDocument
@@ -195,6 +196,22 @@ canonalizeInline = \case
           o -> o
       (Space : r) -> Space : processInlines r
       [] -> []
+
+inlineToText :: Inline -> Text
+inlineToText = \case
+  Text t -> t
+  Bold i -> inlineToText i
+  Italic i -> inlineToText i
+  Underline i -> inlineToText i
+  Strikethrough  i -> inlineToText i
+  Superscript i -> inlineToText i
+  Subscript i -> inlineToText i
+  Spoiler i -> inlineToText i
+  Verbatim t -> t
+  Math t -> t
+  ConcatInline is -> foldMap inlineToText is
+  Link (LinkCons target label _) -> maybe (pack "link") inlineToText label
+  Space -> pack " "
 
 class (KnownSymbol a, Eq (TagArguments a), Eq (TagContent a), Show (TagArguments a), Show (TagContent a)) => Tag (a :: Symbol) where
   type TagArguments a

@@ -291,7 +291,7 @@ paragraph' end' =
             '|' -> P.char '|' >> P.hspace1 >> LinkTargetMarker <$> targetName
             '#' -> P.char '#' >> P.hspace1 >> LinkTargetAny <$> targetName
             _ -> fail "no link target within document"
-        targetName = (TargetName <$> rawText (== '}'))
+        targetName = (TargetName <$> runInline (paragraph' $ P.lookAhead $ void (P.char '}') <|> newline))
         linkText = do
           _ <- P.char '['
           para <- runInline $ do

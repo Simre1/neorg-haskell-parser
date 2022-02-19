@@ -7,18 +7,17 @@ import Data.Foldable (fold)
 import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe, maybeToList)
 import qualified Data.Sequence as S
-import Data.Text (Text, pack)
+import Data.Text (pack)
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Vector as V
 import Neorg.Document
 import Neorg.Document.Tag
-import Neorg.Parser.Block (definition)
 import Neorg.Parser.Main
 import Neorg.Parser.Tags
-import Optics.Core ((<&>), (^.))
+import Optics.Core ((^.))
 import System.Environment (getArgs)
 import qualified Text.Pandoc.Builder as P
-import qualified Text.Pandoc.Definition as P
 import Type.Set (FromList)
 
 main :: IO ()
@@ -111,10 +110,18 @@ convertInline = \case
     label <- traverse convertInline inline
     case target of
       LinkTargetUrl url -> pure $ P.link url "" (fromMaybe (P.text url) label)
+      LinkTargetCurrentDocument documentTarget -> case documentTarget of
+        LinkTargetHeading _ (TargetName name) -> convertInline name <&> \n -> P.link (inlineToLinkReference name) "" (fromMaybe n label)
+        LinkTargetAny (TargetName name) -> convertInline name <&> \n -> P.link (inlineToLinkReference name) "" (fromMaybe n label)
+        _ -> pure $ P.text ""
       _ -> pure $ P.text ""
   Space -> pure P.space
   Verbatim t -> pure $ P.code t
   Math t -> pure $ P.math t
+  where
+    inlineToLinkReference i =
+      let t = inlineToLinkReference i
+       in T.pack "#" <> T.intercalate "-" (T.words t)
 
 type SupportedTags = FromList '["code", "math", "comment", "embed", "document.meta", "table"]
 

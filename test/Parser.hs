@@ -161,12 +161,12 @@ paragraphTests =
       testCase "Verbatim , 2" $ parse singleLineParagraph "\\{`,`,#}" @?= ConcatInline (V.fromList [Text "{", Verbatim ",", Text ",#}"]),
       testCase "Hyperlink" $ parse paragraph "{https://example.com}[example]" @?= Link (LinkCons (LinkTargetUrl "https://example.com") (Just $ Text "example") Nothing),
       testCase "Definition link" $
-        parse paragraph "{$     A link to a definition only}"
+        parse paragraph "{$     def}"
           @?= Link
-            (LinkCons (LinkTargetCurrentDocument $ LinkTargetDefinition $ TargetName "A link to a definition only") Nothing Nothing),
+            (LinkCons (LinkTargetCurrentDocument $ LinkTargetDefinition $ TargetName $ Text "def") Nothing Nothing),
       testCase
         "Heading link"
-        $ parse paragraph "{** Heading2}[Go to Heading]" @?= Link (LinkCons (LinkTargetCurrentDocument $ LinkTargetHeading I1 $ TargetName "Heading2") (Just (ConcatInline $ V.fromList [Text "Go", Space, Text "to", Space, Text "Heading"])) Nothing),
+        $ parse paragraph "{** Heading2}[Go to Heading]" @?= Link (LinkCons (LinkTargetCurrentDocument $ LinkTargetHeading I1 $ TargetName $ Text "Heading2") (Just (ConcatInline $ V.fromList [Text "Go", Space, Text "to", Space, Text "Heading"])) Nothing),
       testCase
         "Absolute file link"
         $ parse paragraph "{@   /absolute/file}" @?= Link (LinkCons (LinkTargetFile $ Absolute "absolute/file") Nothing Nothing),
@@ -184,7 +184,7 @@ paragraphTests =
         $ parse paragraph "{:file:}" @?= Link (LinkCons (LinkTargetNorgFile (Relative "file") Nothing) Nothing Nothing),
       testCase
         "Norg link with target"
-        $ parse paragraph "{:file:* Heading}" @?= Link (LinkCons (LinkTargetNorgFile (Relative "file") (Just $ LinkTargetHeading I0 $ TargetName "Heading")) Nothing Nothing)
+        $ parse paragraph "{:file:* Heading}" @?= Link (LinkCons (LinkTargetNorgFile (Relative "file") (Just $ LinkTargetHeading I0 $ TargetName $ Text "Heading")) Nothing Nothing)
     ]
 
 markerTests :: TestTree
