@@ -162,6 +162,12 @@ readOnlyState = mapParserMonad to from
       s <- ask
       fmap fst . raise $ runState s p
 
+isNewline :: Char -> Bool
+isNewline c = c == '\n' || c == '\r'
+
+isEof :: Parser es Bool
+isEof = P.eof $> True <|> pure False
+
 -- data Embed (s :: *) a = Embed {embedState :: s, embedInfo :: a s}
 --
 -- newtype WithEnd s = UntilMatch (P.Parsec Void s ())

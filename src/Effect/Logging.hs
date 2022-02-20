@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns #-}
 
 module Effect.Logging where
 
@@ -19,6 +20,7 @@ stdErrorLogging = interpretIO $ \case
   LogError t -> T.hPutStrLn stderr "Error: " >> T.hPutStrLn stderr t
   LogWarning t -> T.hPutStrLn stderr "Warning: " >> T.hPutStrLn stderr t
   LogInfo t -> T.hPutStrLn stderr "Info: " >> T.hPutStrLn stderr t
+
 
 ignoreLogging :: Eff (Logging ': es) ~> Eff es
 ignoreLogging = interpret $ \case

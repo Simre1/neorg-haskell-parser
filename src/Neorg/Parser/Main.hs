@@ -26,7 +26,7 @@ parse :: (Logging :> es, GenerateTagParser tags) => Text -> Text -> Eff es (Eith
 parse fileName fileContent =
   left (T.pack . P.errorBundlePretty) <$> P.runParserT document (T.unpack fileName) fileContent
 
-document :: GenerateTagParser tags => Parser es (Document tags)
+document :: (GenerateTagParser tags, Logging :> es) => Parser es (Document tags)
 document =
   runParserState (CurrentHeadingLevel I0) $
     Document <$> blocks

@@ -7,24 +7,28 @@ import Control.Applicative (Alternative (many, (<|>)))
 import Control.Monad (guard, void)
 import Control.Monad.Trans.Class
 import Data.Char (isLetter)
-import Data.Foldable (Foldable (foldl'))
+import Data.Foldable (Foldable (fold, foldl'))
 import Data.Functor (($>), (<&>))
 import Data.Maybe (catMaybes, maybeToList)
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import Effect.Logging
 import Neorg.Document
 import Neorg.Parser.Paragraph
 import Neorg.Parser.Tags.Classes
 import Neorg.Parser.Types
 import Neorg.Parser.Utils
+import qualified Text.Builder as TB
 import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
+import qualified Text.Megaparsec.Char.Lexer as P
+import Debug.Trace
 
 newtype CurrentListLevel = CurrentListLevel IndentationLevel deriving newtype (Show, Eq, Ord, Enum)
 
 newtype CurrentHeadingLevel = CurrentHeadingLevel IndentationLevel deriving newtype (Show, Eq, Ord, Enum)
 
-pureBlockWithoutParagraph :: (Reader CurrentListLevel :> es, GenerateTagParser tags) => Parser es (Maybe (PureBlock tags))
+pureBlockWithoutParagraph :: (Logging :> es, Reader CurrentListLevel :> es, GenerateTagParser tags) => Parser es (Maybe (PureBlock tags))
 pureBlockWithoutParagraph = do
   lookChar >>= \case
     '-' -> pure . List . TaskList <$> taskList <|> pure . List . UnorderedList <$> unorderedList
@@ -33,14 +37,14 @@ pureBlockWithoutParagraph = do
     '@' -> fmap Tag <$> tag
     _ -> fail "Not a pure block"
 
-pureBlock :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (Maybe (PureBlock tags))
+pureBlock :: (GenerateTagParser tags, Logging :> es, Reader CurrentListLevel :> es) => Parser es (Maybe (PureBlock tags))
 pureBlock = do
   markupElement <- isMarkupElement
   if markupElement
     then pureBlockWithoutParagraph
     else pure . Paragraph <$> paragraph
 
-blocks :: (GenerateTagParser tags, State CurrentHeadingLevel :> es) => Parser es (Blocks tags)
+blocks :: (GenerateTagParser tags, Logging :> es, State CurrentHeadingLevel :> es) => Parser es (Blocks tags)
 blocks = do
   blocks' <- P.many $ do
     P.try $ do
@@ -49,7 +53,7 @@ blocks = do
     block
   pure $ V.fromList $ mconcat blocks'
 
-block :: (GenerateTagParser tags, State CurrentHeadingLevel :> es) => Parser es [Block tags]
+block :: (GenerateTagParser tags, Logging :> es, State CurrentHeadingLevel :> es) => Parser es [Block tags]
 block = do
   isMarkup <- isMarkupElement
   if isMarkup
@@ -66,35 +70,74 @@ block = do
         '$' -> pure . Definition <$> definition
         _ -> fail "Not a delimiter and not a heading"
 
-tag :: forall tags es. GenerateTagParser tags => Parser es (Maybe (SomeTag tags))
+tag :: forall tags es. (Logging :> es, GenerateTagParser tags) => Parser es (Maybe (SomeTag tags))
 tag = do
-  tagName <- P.try $ do
+  (tagName, startIndent) <- P.try $ do
+    startIndent <- P.indentLevel
     t <- P.char '@' >> P.takeWhileP (Just "Tag description") (\c -> isLetter c || c == '.')
     guard (t /= "end")
-    pure t
+    pure (t, startIndent)
   P.hspace
-  P.choice
-    [ P.eof >> pure Nothing,
-      do
-        let textContent =
-              P.takeWhileP (Just "Tag content") (/= '@') >>= \t ->
-                (P.try (P.string "@end") >> pure t) <|> (P.char '@' >> fmap ((t <> T.pack ['@']) <>) textContent)
-        content <- textContent
-        case parseTag @tags tagName of
-          Nothing -> pure Nothing
-          Just tagParser -> Just <$> embedParserT tagParser content
-    ]
+  lines <- tagContentLines
+  let args = snd $ head lines
+      content = tail $ init lines
+      minContentIndent = if null content then P.pos1 else minimum $ fst <$> content
+      (endIndent, end) = last lines
+  if T.null end || endIndent < startIndent || minContentIndent < startIndent -- end == "" when no @end tag was provided and thus the end is at eof
+    then pure Nothing
+    else
+      let processedContent = TB.run $ TB.text args <> TB.char '\n' <>
+            foldMap
+              ( \(indent, line) ->
+                  fold (replicate (P.unPos indent - P.unPos minContentIndent) (TB.char ' ')) <> TB.text line <> TB.char '\n'
+              )
+              content
+       in case parseTag @tags tagName of
+            Nothing -> pure Nothing
+            Just tagParser -> Just <$> embedParserT tagParser processedContent
+  where
+    -- P.choice
+    --   [ P.eof >> pure Nothing,
+    --     do
+    --       let textContent =
+    --             P.takeWhileP (Just "Tag content") (/= '@') >>= \t ->
+    --               (P.try (P.string "@end") >> pure t) <|> (P.char '@' >> fmap ((t <> T.pack ['@']) <>) textContent)
+    --       content <- textContent
+    --       case parseTag @tags tagName of
+    --         Nothing -> pure Nothing
+    --         Just tagParser -> Just <$> embedParserT tagParser content
+    --   ]
+
+    tagContent :: Parser es ()
+    tagContent = do
+      args <- P.takeWhileP (Just "Tag arguments") (not . isNewline)
+
+      pure ()
+    lineWithIndent :: Parser es (P.Pos, T.Text)
+    lineWithIndent = do
+      P.hspace
+      level <- P.indentLevel
+      line <- P.takeWhileP Nothing (not . isNewline)
+      newline <|> P.eof
+      pure (level, T.strip line)
+    tagContentLines :: Parser es [(P.Pos, T.Text)]
+    tagContentLines = do
+      (indent, line) <- lineWithIndent
+      eof <- isEof
+      if eof || line == "@end"
+        then pure [(indent, line)]
+        else ((indent, line) :) <$> tagContentLines
 
 horizonalLine :: Parser p ()
 horizonalLine = P.try $ repeating '_' >>= guard . (> 2) >> P.hspace >> lNewline
 
-unorderedList :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (UnorderedList tags)
+unorderedList :: (GenerateTagParser tags, Logging :> es, Reader CurrentListLevel :> es) => Parser es (UnorderedList tags)
 unorderedList = makeListParser '-' (pure ()) $ \l' v -> UnorderedListCons {_uListLevel = l', _uListItems = fmap snd v}
 
-orderedList :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (OrderedList tags)
+orderedList :: (GenerateTagParser tags, Logging :> es, Reader CurrentListLevel :> es) => Parser es (OrderedList tags)
 orderedList = makeListParser '~' (pure ()) $ \l' v -> OrderedListCons {_oListLevel = l', _oListItems = fmap snd v}
 
-taskList :: (GenerateTagParser tags, Reader CurrentListLevel :> es) => Parser es (TaskList tags)
+taskList :: (GenerateTagParser tags, Logging :> es, Reader CurrentListLevel :> es) => Parser es (TaskList tags)
 taskList = makeListParser '-' parseTask $ \l' v -> TaskListCons {_tListLevel = l', _tListItems = v}
   where
     parseTask = do
@@ -104,7 +147,7 @@ taskList = makeListParser '-' parseTask $ \l' v -> TaskListCons {_tListLevel = l
       _ <- P.char ' '
       pure status
 
-makeListParser :: (Reader CurrentListLevel :> es, GenerateTagParser tags) => Char -> Parser es a -> (IndentationLevel -> V.Vector (a, V.Vector (PureBlock tags)) -> l) -> Parser es l
+makeListParser :: (Reader CurrentListLevel :> es, Logging :> es, GenerateTagParser tags) => Char -> Parser es a -> (IndentationLevel -> V.Vector (a, V.Vector (PureBlock tags)) -> l) -> Parser es l
 makeListParser c p f = do
   CurrentListLevel minLevel <- lift ask
   (level, a) <- P.try $ repeatingLevel c >>= \l -> guard (l >= minLevel) >> singleSpace >> p <&> (l,)
@@ -116,7 +159,7 @@ makeListParser c p f = do
       (_, a) <- P.try $ P.hspace >> repeatingLevel c >>= \l -> guard (level == l) >> singleSpace >> p <&> (l,)
       items <- listBlock $ CurrentListLevel level
       pure (a, items)
-    listBlock :: GenerateTagParser tags => CurrentListLevel -> Parser p (V.Vector (PureBlock tags))
+    listBlock :: (GenerateTagParser tags, Logging :> es) => CurrentListLevel -> Parser es (V.Vector (PureBlock tags))
     listBlock currentLevel = do
       pureBlocks <- catMaybes <$> manyOrEnd P.hspace (P.try $ clearBlankSpace >> runParserReader (succ currentLevel) pureBlock) doubleNewline
       pure $ V.fromList pureBlocks
@@ -169,7 +212,7 @@ heading = do
       headingInline <- singleLineParagraph
       pure (level, headingInline)
 
-definition :: (GenerateTagParser tags) => Parser p (Definition tags)
+definition :: (GenerateTagParser tags, Logging :> es) => Parser es (Definition tags)
 definition =
   singleLineDefinition <|> multiLineDefinition
   where
