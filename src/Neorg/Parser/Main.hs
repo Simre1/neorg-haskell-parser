@@ -20,12 +20,11 @@ import Neorg.Parser.Tags
 import Neorg.Parser.Types
 import Neorg.Parser.Utils
 import qualified Text.Megaparsec as P
+import Effect.Logging
 
-parse :: GenerateTagParser tags => Text -> Text -> Either Text (Document tags)
+parse :: (Logging :> es, GenerateTagParser tags) => Text -> Text -> Eff es (Either Text (Document tags))
 parse fileName fileContent =
-  left (T.pack . P.errorBundlePretty) $
-    runPure $
-      P.runParserT document (T.unpack fileName) fileContent
+  left (T.pack . P.errorBundlePretty) <$> P.runParserT document (T.unpack fileName) fileContent
 
 document :: GenerateTagParser tags => Parser es (Document tags)
 document =

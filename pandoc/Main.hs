@@ -15,6 +15,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Vector as V
 import Debug.Trace (traceShowId)
+import Effect.Logging
 import Neorg.Document
 import Neorg.Document.Tag
 import Neorg.Parser.Main
@@ -25,35 +26,22 @@ import System.IO (stderr)
 import qualified Text.Pandoc.Builder as P
 import Type.Set
 
-data Log = Error Text | Warning Text
-
-runLogging :: IOE :> es => Eff (Output Log ': es) ~> Eff es
-runLogging = runOutputEff $ \case
-  Error t -> liftIO $ T.hPutStrLn stderr "Error: " >> T.hPutStrLn stderr t
-  Warning t -> liftIO $ T.hPutStrLn stderr "Warning: " >> T.hPutStrLn stderr t
-
-logWarning :: Output Log :> es => Text -> Eff es ()
-logWarning = output . Warning
-
-logError :: Output Log :> es => Text -> Eff es ()
-logError = output . Error
-
 main :: IO ()
-main = runIOE $
-  runLogging $ do
-    args <- liftIO getArgs
-    case args of
-      [fileName] -> do
-        fileContent <- liftIO $ T.readFile fileName
-        case parse (T.pack fileName) fileContent of
-          Left err -> logError err
-          Right doc -> convertDocument tagHandler doc >>= liftIO . B.putStr . encode
-      _ -> logError $ T.pack "Supply one norg file as argument"
+main = runConvert $ do
+  args <- liftIO getArgs
+  case args of
+    [fileName] -> do
+      fileContent <- liftIO $ T.readFile fileName
+      parsedDocument <- parse (T.pack fileName) fileContent
+      case parsedDocument of
+        Left err -> logError err
+        Right doc -> convertDocument tagHandler doc >>= liftIO . B.putStr . encode
+    _ -> logError $ T.pack "Supply one norg file as argument"
 
-type Convert = Eff '[Output Log, IOE]
+type Convert = Eff '[Logging, IOE]
 
 runConvert :: Convert a -> IO a
-runConvert = runIOE . runLogging
+runConvert = runIOE . stdErrorLogging
 
 convertDocument :: GenerateTagParser tags => TagHandler tags (Convert P.Blocks) -> Document tags -> Convert P.Pandoc
 convertDocument handler (Document blocks) = P.doc . V.foldMap id <$> traverse (convertBlock handler) blocks

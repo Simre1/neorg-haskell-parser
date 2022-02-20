@@ -22,6 +22,7 @@ import qualified Text.Megaparsec as P
 import qualified Text.Megaparsec.Char as P
 import qualified Text.Megaparsec.Internal as P
 import Unsafe.Coerce (unsafeCoerce)
+import Effect.Logging
 
 embedParser :: (MonadFail m, P.ShowErrorComponent e) => P.Parsec e Text a -> Text -> m a
 embedParser p t = do
@@ -83,20 +84,12 @@ consumingTry p = P.ParsecT $ \s cok _ eok eerr ->
    in P.unParser p s cok eerr' eok eerr'
 {-# INLINE consumingTry #-}
 
-viewChar :: P.MonadParsec e Text p => p ()
-viewChar = do
-  !_c <- traceShowId <$> lookChar
-  pure ()
+viewChar :: Logging :> es => Parser es ()
+viewChar = lookChar >>= lift . logInfo . T.pack . pure
 
-viewN :: P.MonadParsec e Text p => Int -> p ()
-viewN i = do
-  !_c <- traceShowId <$> followedBy (P.takeP Nothing i) <|> pure "EOF reached"
-  pure ()
-
-message :: (Show s, Monad p) => s -> p ()
-message msg = do
-  !_msg <- pure (traceShow (show msg) ())
-  pure _msg
+viewN ::  Logging :> es => Int -> Parser es ()
+viewN i = P.lookAhead (takeN i) >>= lift . logInfo
+  where takeN n = P.takeP Nothing n <|> takeN (pred n)
 
 textWord :: P.MonadParsec e Text p => p Text
 textWord = P.takeWhile1P (Just "Text word") (\c -> c /= ' ' && c /= '\n' && c /= '\r')
