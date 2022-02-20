@@ -63,7 +63,8 @@ Here, I have used the `neorg-pandoc-linux86` binary to transform my `norg` file 
 - Trailing modifiers :heavy_check_mark:
 - Escaping :heavy_check_mark:
 - Horizontal line :heavy_check_mark: 
-- Links :white_check_mark:
+- Links :heavy_check_mark:
+- Anchors :x:
 
 ### Legend
 

@@ -239,7 +239,7 @@ paragraph' end' =
       where
         next = do
           P.hspace
-          withNextChar (\c' -> parWhitespace c' <|> attachedOpenings c' <|> word c')
+          withNextChar (\c' -> parWhitespace c' <|> attachedOpenings c' <|> everywhere c')
     link :: Char -> Parser es ()
     link = \case
       '{' -> do
@@ -247,6 +247,7 @@ paragraph' end' =
           target <- linkTarget
           text <- P.optional linkText
           appendInlineToStack $ Link $ LinkCons target text Nothing
+        withNextChar $ \c -> parWhitespace c <|> attachedOpenings c <|> attachedClosings c <|> everywhere c
         pure ()
       _ -> do
         fail "No link"
@@ -291,7 +292,7 @@ paragraph' end' =
             '|' -> P.char '|' >> P.hspace1 >> LinkTargetMarker <$> targetName
             '#' -> P.char '#' >> P.hspace1 >> LinkTargetAny <$> targetName
             _ -> fail "no link target within document"
-        targetName = (TargetName <$> rawText (== '}'))
+        targetName = TargetName <$> runInline (paragraph' $ P.lookAhead $ void (P.char '}') <|> newline)
         linkText = do
           _ <- P.char '['
           para <- runInline $ do
