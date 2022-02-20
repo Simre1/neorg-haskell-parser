@@ -1,43 +1,62 @@
 module Main where
 
+import Cleff
+import Cleff.Output
+import Control.Monad (when)
 import Control.Monad.Trans.State (State, evalState)
 import Data.Aeson (encode)
 import qualified Data.ByteString.Lazy as B
 import Data.Foldable (fold)
-import Data.Functor ((<&>))
-import Data.Maybe (fromMaybe, maybeToList)
+import Data.Functor (($>), (<&>))
+import Data.Maybe (fromMaybe, isJust, maybeToList)
 import qualified Data.Sequence as S
-import Data.Text (pack)
+import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Vector as V
+import Debug.Trace (traceShowId)
 import Neorg.Document
 import Neorg.Document.Tag
 import Neorg.Parser.Main
 import Neorg.Parser.Tags
 import Optics.Core ((^.))
 import System.Environment (getArgs)
+import System.IO (stderr)
 import qualified Text.Pandoc.Builder as P
-import Type.Set (FromList)
+import Type.Set
+
+data Log = Error Text | Warning Text
+
+runLogging :: IOE :> es => Eff (Output Log ': es) ~> Eff es
+runLogging = runOutputEff $ \case
+  Error t -> liftIO $ T.hPutStrLn stderr "Error: " >> T.hPutStrLn stderr t
+  Warning t -> liftIO $ T.hPutStrLn stderr "Warning: " >> T.hPutStrLn stderr t
+
+logWarning :: Output Log :> es => Text -> Eff es ()
+logWarning = output . Warning
+
+logError :: Output Log :> es => Text -> Eff es ()
+logError = output . Error
 
 main :: IO ()
-main = do
-  fileName <-
-    getArgs <&> \case
-      [name] -> name
-      _ -> error "Supply one norg file as argument"
-  fileContent <- T.readFile fileName
-  case parse (pack fileName) fileContent of
-    Left err -> T.putStrLn err
-    Right doc -> B.putStr $ encode $ convertDocument tagHandler doc
+main = runIOE $
+  runLogging $ do
+    args <- liftIO getArgs
+    case args of
+      [fileName] -> do
+        fileContent <- liftIO $ T.readFile fileName
+        case parse (T.pack fileName) fileContent of
+          Left err -> logError err
+          Right doc -> convertDocument tagHandler doc >>= liftIO . B.putStr . encode
+      _ -> logError $ T.pack "Supply one norg file as argument"
 
-type Convert a = State () a
+type Convert = Eff '[Output Log, IOE]
 
-runConvert :: Convert a -> a
-runConvert c = evalState c ()
+runConvert :: Convert a -> IO a
+runConvert = runIOE . runLogging
 
-convertDocument :: GenerateTagParser tags => TagHandler tags (Convert P.Blocks) -> Document tags -> P.Pandoc
-convertDocument handler (Document blocks) = runConvert $ P.doc . V.foldMap id <$> traverse (convertBlock handler) blocks
+convertDocument :: GenerateTagParser tags => TagHandler tags (Convert P.Blocks) -> Document tags -> Convert P.Pandoc
+convertDocument handler (Document blocks) = P.doc . V.foldMap id <$> traverse (convertBlock handler) blocks
 
 convertBlock :: TagHandler tags (Convert P.Blocks) -> Block tags -> Convert P.Blocks
 convertBlock handler = \case
@@ -82,7 +101,8 @@ convertQuote quote = P.blockQuote . P.para <$> convertInline (quote ^. quoteCont
 convertHeading :: TagHandler tags (Convert P.Blocks) -> Heading -> Convert P.Blocks
 convertHeading handler heading = do
   text <- convertInline $ heading ^. headingText
-  pure $ P.header (succ . fromEnum $ heading ^. headingLevel) text
+  let ref = T.intercalate "-" $ T.words $ T.toLower $ inlineToText $ heading ^. headingText
+  pure $ P.headerWith (ref, [], []) (succ . fromEnum $ heading ^. headingLevel) text
 
 convertDefinition :: TagHandler tags (Convert P.Blocks) -> Definition tags -> Convert P.Blocks
 convertDefinition handler definition = do
@@ -111,17 +131,34 @@ convertInline = \case
     case target of
       LinkTargetUrl url -> pure $ P.link url "" (fromMaybe (P.text url) label)
       LinkTargetCurrentDocument documentTarget -> case documentTarget of
-        LinkTargetHeading _ (TargetName name) -> convertInline name <&> \n -> P.link (inlineToLinkReference name) "" (fromMaybe n label)
+        LinkTargetHeading _ (TargetName name) -> convertInline name <&> \n -> P.link (inlineToLinkReference name) "" (fromMaybe n label) -- TODO: Make sure that indentation level matches
         LinkTargetAny (TargetName name) -> convertInline name <&> \n -> P.link (inlineToLinkReference name) "" (fromMaybe n label)
-        _ -> pure $ P.text ""
-      _ -> pure $ P.text ""
+        LinkTargetFootnote t -> unsupportedTargetWithinDocument label t
+        LinkTargetDefinition t -> unsupportedTargetWithinDocument label t
+        LinkTargetMarker t -> unsupportedTargetWithinDocument label t
+      LinkTargetFile f -> fileLink label f
+      LinkTargetNorgFile f docTarget -> do
+        when (isJust docTarget) $ logWarning "Links to parts of a different document are not supported by pandoc"
+        fileLink label f
+
+  -- _ -> logWarning "Workspace links are not supported yet" $> P.text ""
   Space -> pure P.space
   Verbatim t -> pure $ P.code t
   Math t -> pure $ P.math t
+  _ -> error "Unsupported inline" -- TODO: Add anchors
   where
     inlineToLinkReference i =
-      let t = inlineToLinkReference i
-       in T.pack "#" <> T.intercalate "-" (T.words t)
+      let t = inlineToText i
+       in T.pack "#" <> T.intercalate "-" (T.words $ T.toLower t)
+    unsupportedTargetWithinDocument label (TargetName name) = do
+      logWarning "Links for definitions and markers are not supported by pandoc"
+      convertInline name <&> flip fromMaybe label
+    fileLink label file =
+      (\path -> P.link path "" (fromMaybe (P.text path) label)) <$> case file of
+        Relative t -> pure t
+        Absolute t -> pure $ "/" <> t
+        CurrentWorkspace t -> logWarning "Workspace links are not supported yet" $> t
+        Workspace w t -> logWarning "Workspace links are not supported yet" $> w <> "/" <> t
 
 type SupportedTags = FromList '["code", "math", "comment", "embed", "document.meta", "table"]
 
