@@ -74,7 +74,7 @@ convertList handler = \case
       traverse (applicativeConcatMap $ convertPureBlock handler) $
         ul ^. uListItems
   OrderedList ol ->
-    fmap (P.bulletList . V.toList) $
+    fmap (P.orderedList . V.toList) $
       traverse (applicativeConcatMap $ convertPureBlock handler) $
         ol ^. oListItems
   TaskList tl ->
