@@ -6,7 +6,7 @@ import Cleff.State
 import Control.Applicative (Alternative (many, (<|>)))
 import Control.Monad (guard, void)
 import Control.Monad.Trans.Class
-import Data.Char (isLetter)
+import Data.Char (isLetter, isSpace)
 import Data.Foldable (Foldable (fold, foldl'))
 import Data.Functor (($>), (<&>))
 import Data.Maybe (catMaybes, maybeToList)
@@ -81,7 +81,12 @@ tag = do
   lines <- tagContentLines
   let args = snd $ head lines
       content = tail $ init lines
-      minContentIndent = if null content then P.pos1 else minimum $ fst <$> content
+      minContentIndent =
+        if null nonEmptyLines
+          then P.pos1
+          else minimum $ fst <$> nonEmptyLines
+        where
+          nonEmptyLines = filter (not . T.all isSpace . snd) content
       (endIndent, end) = last lines
   if T.null end || endIndent < startIndent || minContentIndent < startIndent -- end == "" when no @end tag was provided and thus the end is at eof
     then pure Nothing
