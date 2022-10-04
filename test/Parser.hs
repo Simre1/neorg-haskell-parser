@@ -24,7 +24,7 @@ parserTests :: TestTree
 parserTests =
   testGroup
     "Parser tests"
-    [headingTests, paragraphTests, listTests, horizonalLineTests, markerTests, tagTests, definitionTest]
+    [headingTests, paragraphTests, listTests, horizonalLineTests, markerTests, tagTests, definitionTest, quoteTests]
 
 tagTests :: TestTree
 tagTests =
@@ -432,6 +432,73 @@ definitionTest =
                           Quote (QuoteCons {_quoteLevel = I0, _quoteContent = ConcatInline $ V.fromList [Text "some", Space, Text "quote"]})
                         ]
                   }
+            ]
+    ]
+
+quoteTests :: TestTree
+quoteTests =
+  testGroup
+    "Quote tests"
+    [ testCase "Single-Line quote" $
+        parse (blocks @'Empty) "> line1"
+          ?== V.fromList
+            [ PureBlock $
+                Quote $
+                  QuoteCons
+                    { _quoteLevel = I0,
+                      _quoteContent = Text "line1"
+                    }
+            ],
+      testCase
+        "Multi-Line quote"
+        $ parse (blocks @'Empty) "> line1\n> line2"
+          ?== V.fromList
+            [ PureBlock $
+                Quote $
+                  QuoteCons
+                    { _quoteLevel = I0,
+                      _quoteContent = ConcatInline $ V.fromList [Text "line1", Space, Text "line2"]
+                    }
+            ],
+      testCase
+        "Interleaved quote"
+        $ parse (blocks @'Empty) "> line1\n>> line2\n> line3"
+          ?== V.fromList
+            [ PureBlock $
+                Quote $
+                  QuoteCons
+                    { _quoteLevel = I0,
+                      _quoteContent = Text "line1"
+                    },
+              PureBlock $
+                Quote $
+                  QuoteCons
+                    { _quoteLevel = I1,
+                      _quoteContent = Text "line2"
+                    },
+              PureBlock $
+                Quote $
+                  QuoteCons
+                    { _quoteLevel = I0,
+                      _quoteContent = Text "line3"
+                    }
+            ],
+      testCase
+        "Separate quotes"
+        $ parse (blocks @'Empty) "> line1\n\n> line2"
+          ?== V.fromList
+            [ PureBlock $
+                Quote $
+                  QuoteCons
+                    { _quoteLevel = I0,
+                      _quoteContent = Text "line1"
+                    },
+              PureBlock $
+                Quote $
+                  QuoteCons
+                    { _quoteLevel = I0,
+                      _quoteContent = Text "line2"
+                    }
             ]
     ]
 

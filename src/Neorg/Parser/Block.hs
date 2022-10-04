@@ -9,6 +9,7 @@ import Control.Monad.Trans.Class
 import Data.Char (isLetter)
 import Data.Foldable (Foldable (fold, foldl'))
 import Data.Functor (($>), (<&>))
+import Data.List (intersperse)
 import Data.Maybe (catMaybes, maybeToList)
 import qualified Data.Text as T
 import qualified Data.Vector as V
@@ -176,8 +177,21 @@ strongDelimiter = do
 
 quote :: Parser p Quote
 quote =
-  P.try (repeatingLevel '>' >-> singleSpace) >>= \l ->
-    singleLineParagraph <&> \c -> QuoteCons {_quoteLevel = l, _quoteContent = c}
+  do
+    startLevel <- P.try (repeatingLevel '>' >-> singleSpace)
+    initialContent <- singleLineParagraph
+    content <- P.many (P.try $ quote' startLevel)
+    let inline =
+          if null content
+            then initialContent
+            else ConcatInline $ V.fromList $ intersperse Space (initialContent : content)
+    return QuoteCons {_quoteLevel = startLevel, _quoteContent = inline}
+  where
+    quote' startLevel = do
+      level <- lNewline >> repeatingLevel '>' >-> singleSpace
+      if startLevel /= level
+        then fail "Wrong indentation"
+        else singleLineParagraph
 
 marker :: Parser p Marker
 marker = do
