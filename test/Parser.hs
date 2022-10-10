@@ -93,6 +93,12 @@ tagTests =
             ),
       testCase "Proper tag indentation" $ parse (tag @(FromList '["code"])) "@code \n  nospaceshere\n    twospaces\n@end" ?== Just (SomeTag (Proxy @"code") Nothing "nospaceshere\n  twospaces\n"),
       testCase "Proper tag indentation 2" $ parse (tag @(FromList '["code"])) "@code \nnospaceshere\n  twospaces\n@end" ?== Just (SomeTag (Proxy @"code") Nothing "nospaceshere\n  twospaces\n"),
+      -- Check that the parser properly ignores empty lines when calculating
+      -- the tag indentaion
+      testCase "Proper tag indentation 3" $
+        parse (blocks @(FromList '["code"])) " @code \n here\n\n @end"
+          ?== V.fromList
+            [PureBlock $ Tag (SomeTag (Proxy @"code") Nothing "here\n\n")],
       testCase "Wrong tag indentation" $ parse (blocks @(FromList '["code"])) "  @code \n  nospaceshere\n    twospaces\n@end" ?== V.fromList [],
       testCase "Wrong tag indentation 2" $ parse (blocks @(FromList '["code"])) "  @code \n nospaceshere\n    twospaces\n  @end" ?== V.fromList []
     ]
