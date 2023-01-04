@@ -1,6 +1,6 @@
 # Neorg Haskell Parser
 
-Neorg Haskell Parser aims to be a complete implementation of the [Neorg markup specification](https://github.com/nvim-neorg/neorg/blob/main/docs/NFF-0.1-spec.md). Furthermore, it should be able to transform .norg files to the [pandoc](https://github.com/jgm/pandoc) AST and subsequently to the plethora of formats that pandoc supports.
+Neorg Haskell Parser aims to be a complete implementation of the [Neorg markup specification](https://github.com/nvim-neorg/norg-specs). Furthermore, it should be able to transform .norg files to the [pandoc](https://github.com/jgm/pandoc) AST and subsequently to the plethora of formats that pandoc supports.
 
 ## Installation
 
