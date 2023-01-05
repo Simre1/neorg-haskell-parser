@@ -36,7 +36,13 @@ main = runConvert $ do
       case parsedDocument of
         Left err -> logError err
         Right doc -> convertDocument tagHandler doc >>= liftIO . B.putStr . encode
-    _ -> logError $ T.pack "Supply one norg file as argument"
+    [] -> do
+      fileContent <- liftIO $ T.getContents
+      parsedDocument <- parse (T.pack "<STDIN>") fileContent
+      case parsedDocument of
+        Left err -> logError err
+        Right doc -> convertDocument tagHandler doc >>= liftIO . B.putStr . encode
+    _ -> logError $ T.pack "Supply one norg file, or none, as argument"
 
 type Convert = Eff '[Logging, IOE]
 
