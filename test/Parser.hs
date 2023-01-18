@@ -143,6 +143,12 @@ paragraphTests =
             [ PureBlock $ Paragraph (Text "Text1"),
               PureBlock $ Paragraph (Text "Text2")
             ],
+      testCase "Two Paragraph segments" $
+        parse (blocks @'Empty) "Text1\nText2"
+          ?== V.fromList
+            [ PureBlock $ Paragraph (Text "Text1"),
+              PureBlock $ Paragraph (Text "Text2")
+            ],
       testCase "Two sentences with blank space" $
         parse (blocks @'Empty) "Simple sentence.\n   \n   Another sentence.\n\n"
           ?== V.fromList
