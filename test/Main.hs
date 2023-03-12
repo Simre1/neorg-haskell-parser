@@ -2,9 +2,11 @@ module Main (main) where
 
 import Test.Hspec
 
-import Layer1
+import Paragraph
+import Heading
 
 
 main :: IO ()
 main = hspec $ do
-  layer1
+  paragraphSpec
+  headingSpec

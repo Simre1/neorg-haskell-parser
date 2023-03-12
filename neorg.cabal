@@ -27,7 +27,7 @@ library
       Neorg.Parser.Paragraph
       Neorg.Parser.Type
       Neorg.Parser.Combinators
-      
+      Neorg.Parser.Block
       Neorg.Document
 
     -- Modules included in this library but not exported.
@@ -47,7 +47,7 @@ library
       these
     hs-source-dirs:   src
     default-language: GHC2021
-    default-extensions: OverloadedStrings
+    default-extensions: OverloadedStrings, LambdaCase, DuplicateRecordFields
 
 executable neorg
     main-is:          Main.hs
@@ -65,7 +65,7 @@ executable neorg
 
     hs-source-dirs:   app
     default-language: GHC2021
-    default-extensions: OverloadedStrings
+    default-extensions: OverloadedStrings, LambdaCase
 
 test-suite neorg-test
     default-language: GHC2021
@@ -73,6 +73,7 @@ test-suite neorg-test
     hs-source-dirs:   test
     main-is:          Main.hs
     other-modules:
-      Layer1
+      Paragraph
+      Heading
     build-depends:    base ^>=4.16.4.0, neorg, hspec, HUnit, text, these
-    default-extensions: OverloadedStrings
+    default-extensions: OverloadedStrings, LambdaCase

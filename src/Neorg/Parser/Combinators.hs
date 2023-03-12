@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module Neorg.Parser.Combinators where
 
 import Control.Applicative
@@ -6,11 +8,12 @@ import Data.Sequence qualified as S
 import Neorg.Parser.Type
 import Text.Megaparsec
 import Text.Megaparsec.Char (char)
+import Text.Megaparsec.Debug
 
-emptyLines :: Parser ()
+emptyLines :: (Token t ~ Char, MonadParsec e t p) => p ()
 emptyLines = void $ takeWhileP (Just "Empty Lines") (<= ' ')
 
-space :: Parser ()
+space :: (Token t ~ Char, MonadParsec e t p) => p ()
 space = void $ char ' '
 
 spaces :: Parser ()
@@ -19,8 +22,11 @@ spaces = void $ takeWhileP (Just "Spaces") (\c -> c <= ' ' && (c /= '\n' && c /=
 spaces1 :: Parser ()
 spaces1 = void $ takeWhile1P (Just "1 space or more") (\c -> c <= ' ' && (c /= '\n' && c /= '\r'))
 
-lexemeEmptyLines :: Parser a -> Parser a
-lexemeEmptyLines p = liftA2 const p emptyLines
+anyChar :: (Token t ~ Char, MonadParsec e t p) => p Char
+anyChar = satisfy (const True)
+
+lexeme :: (Token t ~ Char, MonadParsec e t p) => p a -> p a
+lexeme p = liftA2 const p emptyLines
 
 lexemeSpaces :: Parser a -> Parser a
 lexemeSpaces p = liftA2 const p spaces
@@ -47,3 +53,9 @@ collect1 end p = p >>= go . S.singleton
 
 followedBy :: (MonadParsec e t p) => p a -> p a
 followedBy = lookAhead
+
+repeating :: (MonadParsec e t p, Token t ~ Char) => Char -> p Int
+repeating c = length <$> many1 (char c)
+
+dbgThis :: (MonadParsecDbg e s p, Show a) => p a -> p a
+dbgThis = dbg "this" . label "this"
