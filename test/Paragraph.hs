@@ -1,10 +1,9 @@
 module Paragraph where
 
 import Data.Text
-import Data.These
 import Neorg.Document
 import Neorg.Parser.Paragraph (paragraph, paragraphSegment)
-import Neorg.Parser.Type (parseTextAnySource)
+import Neorg.Parser.Base (parseTextAnySource)
 import Test.HUnit
 import Test.Hspec
 
@@ -214,19 +213,13 @@ paragraphSpec = describe "Paragraph" $ do
 
   it "Link with only a location" $ do
     let input = "{https://github.com/nvim-neorg/neorg}"
-        expectation = ParagraphCons [Link $ This (Url "https://github.com/nvim-neorg/neorg")]
-    result <- parseParagraph input
-    expectation @=? result
-
-  it "Link with only a description" $ do
-    let input = "[A *description*]"
-        expectation = ParagraphCons [Link $ That (ParagraphCons [Word "A", Space, StyledParagraph Bold $ ParagraphCons [Word "description"]])]
+        expectation = ParagraphCons [Link (Url "https://github.com/nvim-neorg/neorg") Nothing]
     result <- parseParagraph input
     expectation @=? result
 
   it "Link with both a location and a description" $ do
     let input = "{https://github.com/nvim-neorg/neorg}[Neorg]"
-        expectation = ParagraphCons [Link $ These (Url "https://github.com/nvim-neorg/neorg") (ParagraphCons [Word "Neorg"])]
+        expectation = ParagraphCons [Link (Url "https://github.com/nvim-neorg/neorg") (Just $ ParagraphCons [Word "Neorg"])]
     result <- parseParagraph input
     expectation @=? result
 
@@ -269,5 +262,11 @@ paragraphSpec = describe "Paragraph" $ do
   it "Paragraph segment" $ do
     let input = "Segment1\nSegment2"
         expectation = ParagraphCons [Word "Segment1"]
+    result <- parseParagraphSegment input
+    expectation @=? result
+
+  it "Paragraph with no trailing spaces" $ do
+    let input = "Para1 \n\n  Para2"
+        expectation = ParagraphCons [Word "Para1"]
     result <- parseParagraphSegment input
     expectation @=? result

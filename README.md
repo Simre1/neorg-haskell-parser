@@ -2,16 +2,34 @@
 
 Reimplementation of the parser with the [Neorg markup specification](https://github.com/nvim-neorg/norg-specs). It will be able to transform .norg files to the [pandoc](https://github.com/jgm/pandoc) AST and subsequently to the plethora of formats that pandoc supports.
 
-## Roadmap
+## Parser Implementation State
 
 I will focus on the first three layers for now. Layers 4 and 5 are on hold for now.
 
 - [x] Layer 1: Paragraphs
 - [ ] Layer 2:
   - [x] Heading
-  - [ ] Lists
+  - [x] Lists
+  - [x] Quotes
+  - [ ] More link locations
+  - [ ] Verbatim Ranged tags
+  - [ ] Delimiting modifiers
 - [ ] Layer 3
 - [ ] PDF creation
+
+## Pandoc Implementation State
+
+- [ ] Layer 1: Paragraphs
+- [ ] Layer 2:
+  - [ ] Heading
+  - [ ] Lists
+  - [ ] Quotes
+  - [ ] More link locations
+  - [ ] Verbatim Ranged tags
+  - [ ] Delimiting modifiers
+- [ ] Layer 3
+- [ ] PDF creation
+
 
 ## Installation (not working yet)
 

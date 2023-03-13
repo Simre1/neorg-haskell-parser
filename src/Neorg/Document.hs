@@ -13,7 +13,7 @@ data ParagraphElement
   | Space
   | StyledParagraph ParagraphStyle Paragraph
   | VerbatimParagraph VerbatimType Text
-  | Link (These LinkLocation Paragraph)
+  | Link LinkLocation (Maybe Paragraph)
   deriving (Show, Eq)
 
 data ParagraphStyle = Bold | Italic | Underline | StrikeThrough | Superscript | Subscript | Spoiler deriving (Show, Eq, Enum, Bounded)
@@ -41,9 +41,15 @@ newtype PureBlocks = PureBlocks [PureBlock] deriving (Show, Eq)
 
 data PureBlock
   = List List
-  | Quote (Maybe TaskStatus) PureBlocks
+  | Quote Quote
   | Paragraph Paragraph
   deriving (Show, Eq)
+
+data Quote = QuoteCons {
+  level :: Int,
+  status :: Maybe TaskStatus,
+  content :: PureBlocks
+} deriving (Show, Eq)
 
 data List = ListCons
   { level :: Int,
@@ -52,7 +58,7 @@ data List = ListCons
   }
   deriving (Show, Eq)
 
-data ListOrdering = Ordered | Unordered deriving (Show, Eq)
+data ListOrdering = OrderedList | UnorderedList deriving (Show, Eq)
 
 data TaskStatus = Undone | Done | Unclear | Urgent | Recurring | InProgress | OnHold | Cancelled deriving (Show, Eq, Enum, Bounded)
 

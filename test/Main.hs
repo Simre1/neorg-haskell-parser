@@ -1,12 +1,10 @@
 module Main (main) where
 
-import Test.Hspec
-
+import Block 
 import Paragraph
-import Heading
-
+import Test.Hspec
 
 main :: IO ()
 main = hspec $ do
   paragraphSpec
-  headingSpec
+  blockSpec

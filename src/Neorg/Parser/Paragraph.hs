@@ -5,67 +5,62 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import Data.Bool
 import Data.Set qualified as S
-import Data.Text hiding (init, last)
-import Data.Text qualified as T
+import Data.Text hiding (dropWhile, init, last, reverse)
+import Data.Text qualified as T hiding (dropWhile, reverse)
 import Data.These
 import Neorg.Document
+import Neorg.Parser.Base
 import Neorg.Parser.Combinators
-import Neorg.Parser.Type
-import Text.Megaparsec
-import Text.Megaparsec.Char (char, eol, newline, string)
+import Text.Megaparsec hiding (satisfy)
 
 type ParagraphParser a = StateT ParagraphState Parser a
 
-data ParagraphState = ParagraphState
-  { currentLineHasContent :: Bool,
-    previousElement :: ParagraphElement
+newtype ParagraphState = ParagraphState
+  { previousElement :: ParagraphElement
   }
   deriving (Show, Eq)
 
 paragraphSegment :: Parser Paragraph
-paragraphSegment = lexeme $ paragraphWithEnd (True <$ (void eol <|> eof))
+paragraphSegment = lexeme $ paragraphWithEnd (True <$ paragraphSegmentBreak)
 
 paragraph :: Parser Paragraph
-paragraph = lexeme $ flip evalStateT (ParagraphState False Space) $ paragraphWithEnd' (True <$ paragraphBreak)
+paragraph = lexeme $ paragraphWithEnd (True <$ paragraphBreak)
 
 paragraphWithEnd :: Parser Bool -> Parser Paragraph
 paragraphWithEnd =
-  flip evalStateT (ParagraphState False Space) . paragraphWithEnd' . lift
+  flip evalStateT (ParagraphState Space) . paragraphWithEnd' . lift
 
 paragraphWithEnd' :: ParagraphParser Bool -> ParagraphParser Paragraph
 paragraphWithEnd' end = do
-  notFollowedBy paragraphBreak
+  notFollowedBy $ lift detachedModifierStart
   result <- collect1 end' $ do
-    element <-
+    element <- 
       choice
         [ either Punctuation Word <$> escapeChar,
-          Link <$> link,
+          uncurry Link <$> lift link,
           uncurry StyledParagraph <$> styleModifier,
           uncurry VerbatimParagraph <$> verbatimModifier,
           Word <$> lift word,
           Punctuation <$> lift punctuation,
-          Space <$ lift spaces1,
-          Space <$ ((lift spaces >> void eol) >> modify (\state -> state {currentLineHasContent = False}))
+          Space <$ lift emptyLines1
         ]
-    modify (\state -> ParagraphState (currentLineHasContent state || element /= Space) element)
+    modify (\state -> state {previousElement = element})
     pure element
 
   maybe (fail "Not a valid paragraph") pure result
   where
     end' :: ParagraphParser ([ParagraphElement] -> Maybe Paragraph)
     end' = do
-      isValid <- end
+      isValid <-  end
       if isValid
         then pure $ pure . ParagraphCons . removeTrailingWhitespace
         else pure $ const Nothing
-    removeTrailingWhitespace elements
-      | last elements == Space = init elements
-      | otherwise = elements
+    removeTrailingWhitespace elements = reverse $ dropWhile (== Space) $ reverse elements
 
 escapeChar :: ParagraphParser (Either Char Text)
 escapeChar = try $ do
-  char '\\'
-  c <- satisfy (> ' ')
+  lift $ char '\\'
+  c <- lift $ satisfy (> ' ')
   pure $
     if S.member c punctuationCharacters
       then Left c
@@ -74,7 +69,7 @@ escapeChar = try $ do
 styleModifier :: ParagraphParser (ParagraphStyle, Paragraph)
 styleModifier = try $ do
   style <- styleStart
-  paragraph <- paragraphWithEnd' (True <$ styleEnd style <|> False <$ paragraphBreak)
+  paragraph <- paragraphWithEnd' (True <$ styleEnd style <|> False <$ lift paragraphBreak)
   pure (style, paragraph)
   where
     styleStart :: ParagraphParser ParagraphStyle
@@ -88,7 +83,7 @@ styleModifier = try $ do
 verbatimModifier :: ParagraphParser (VerbatimType, Text)
 verbatimModifier = try $ do
   verbatimType <- verbatimStart
-  text <- verbatim (verbatimToChar verbatimType) verbatimEnd
+  text <- lift $ verbatim (verbatimToChar verbatimType) verbatimEnd
   pure (verbatimType, text)
   where
     verbatimStart :: ParagraphParser VerbatimType
@@ -100,37 +95,33 @@ verbatimModifier = try $ do
     verbatimEnd c line =
       evalStateT
         (attachedModifierEnd c)
-        (ParagraphState True $ if T.last line == ' ' then Space else Word (pack [T.last line]))
+        (ParagraphState $ if T.last line == ' ' then Space else Word (pack [T.last line]))
 
-link :: ParagraphParser (These LinkLocation Paragraph)
+link :: Parser (LinkLocation, Maybe Paragraph)
 link = try $ do
-  location <- optional linkLocation
+  location <- linkLocation
   label <- optional linkLabel
-  case (location, label) of
-    (Just loc, Just lab) -> pure $ These loc lab
-    (Nothing, Just lab) -> pure $ That lab
-    (Just loc, Nothing) -> pure $ This loc
-    _ -> fail "Not a link"
+  pure (location, label)
   where
     linkLocation = try $ do
       char '{'
-      notFollowedBy (void eol <|> eof)
+      notFollowedBy (void newline <|> eof)
       url <- verbatim '}' (\c line -> guard (T.length (T.strip line) > 0) >> void (char c))
       pure $ Url url
     linkLabel = try $ do
       char '['
-      notFollowedBy (void eol <|> eof)
-      paragraphWithEnd' $ do
-        hasContent <- currentLineHasContent <$> get
-        (hasContent <$ char ']') <|> (False <$ paragraphBreak)
+      notFollowedBy (void newline <|> eof)
+      paragraphWithEnd $ do
+        atBeginning <- atBeginningOfLine
+        (not atBeginning <$ char ']') <|> (False <$ paragraphBreak)
 
-verbatim :: Char -> (Char -> Text -> Parser ()) -> ParagraphParser Text
+verbatim :: Char -> (Char -> Text -> Parser ()) -> Parser Text
 verbatim endChar endParser = do
-  line <- takeWhile1P (Just "verbatim") (\c -> c /= '\n' && c /= '\r' && c /= endChar)
+  line <- takeWhile1Chars (Just "verbatim") (\c -> c /= '\n' && c /= '\r' && c /= endChar)
   guard $ T.length line > 0
   choice
-    [ line <$ lift (endParser endChar line),
-      paragraphBreak >> eol >> ((line <>) <$> verbatim endChar endParser)
+    [ line <$ endParser endChar line,
+      paragraphBreak >> newline >> ((line <>) <$> verbatim endChar endParser)
     ]
 
 attachedModifierStart :: Char -> ParagraphParser ()
@@ -142,8 +133,8 @@ attachedModifierStart c = try $ do
             _ -> False
         )
       . previousElement
-  char c
-  lift $ notFollowedBy (space <|> void eol <|> void eof)
+  lift $ char c
+  lift $ notFollowedBy (space <|> void newline <|> void eof)
   pure ()
 
 attachedModifierEnd :: Char -> ParagraphParser ()
@@ -154,8 +145,8 @@ attachedModifierEnd c = try $ do
             _ -> True
         )
       . previousElement
-  char c
-  lift $ followedBy $ space <|> void punctuation <|> void eol <|> void eof
+  lift $ char c
+  lift $ followedBy $ space <|> void punctuation <|> void newline <|> void eof
 
 styleToChar :: ParagraphStyle -> Char
 styleToChar Bold = '*'
@@ -171,7 +162,7 @@ verbatimToChar Math = '$'
 verbatimToChar Code = '`'
 
 word :: Parser Text
-word = takeWhile1P (Just "Word") $ \c -> c > ' ' && not (S.member c punctuationCharacters)
+word = takeWhile1Chars (Just "Word") $ \c -> c > ' ' && not (S.member c punctuationCharacters)
 
 punctuation :: Parser Char
 punctuation = satisfy $ \c -> S.member c punctuationCharacters
@@ -179,18 +170,15 @@ punctuation = satisfy $ \c -> S.member c punctuationCharacters
 punctuationCharacters :: S.Set Char
 punctuationCharacters = S.fromList "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 
-paragraphBreak :: ParagraphParser ()
-paragraphBreak = 
-  choice
-    [ eof,
-      do
-        get >>= guard . not . currentLineHasContent
-        detachedModifierStart <|> try (lift spaces >> void eol)
-    ]
+paragraphBreak :: Parser ()
+paragraphBreak = choice [eof, linesOfWhitespace >>= guard . (>= 2), atBeginningOfLine >>= guard >> detachedModifierStart]
 
-detachedModifierStart :: ParagraphParser ()
+paragraphSegmentBreak :: Parser ()
+paragraphSegmentBreak = choice [eof, linesOfWhitespace >>= guard . (>= 1)]
+
+detachedModifierStart :: Parser ()
 detachedModifierStart = lookAhead $ do
-  choice $ flip fmap detachedModifierSymbols $ \char -> repeating char >> lift space
+  choice $ flip fmap detachedModifierSymbols $ void . detachedModifier
 
 detachedModifierSymbols :: String
-detachedModifierSymbols = "*-"
+detachedModifierSymbols = "*-~>"

@@ -25,7 +25,7 @@ library
       Neorg.Parser.Document
       Neorg.Parser.Error
       Neorg.Parser.Paragraph
-      Neorg.Parser.Type
+      Neorg.Parser.Base
       Neorg.Parser.Combinators
       Neorg.Parser.Block
       Neorg.Document
@@ -74,6 +74,6 @@ test-suite neorg-test
     main-is:          Main.hs
     other-modules:
       Paragraph
-      Heading
+      Block
     build-depends:    base ^>=4.16.4.0, neorg, hspec, HUnit, text, these
     default-extensions: OverloadedStrings, LambdaCase
