@@ -27,14 +27,15 @@ verbatimRangedTag = do
       tagParameters
   guard $ name /= "end"
   newline
-  content <- withinTag '@' whitespaceToSkip takeLine
-  pure $ VerbatimRangedTagCons name parameters $ mconcat $ intersperse "\n" content
+  !content <- withinTag '@' whitespaceToSkip takeLine
+  
+  pure $ VerbatimRangedTagCons name parameters $ mconcat $ intersperse "\n" $ filter (/= "") content
 
 withinTag :: Char -> Int -> Parser a -> Parser [a]
 withinTag tagChar tagOffset lineParser = lexeme content
   where
     content = do
-      lineWhitespace <|> (spaces >> newline)
+      lineWhitespace <|> (spaces >> followedBy newline)
       choice
         [ [] <$ (char tagChar >> text "end"),
           liftA2 (:) (lineParser >-> newline) content

@@ -515,3 +515,18 @@ tagSpec = describe "Heading" $ do
           Blocks [PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
     result <- parseBlocks input
     expectation @=? result
+
+  it "Verbatim ranged tag with too little space at end" $ do
+    let input = "  @code\n  a\n@end"
+    parseBlocksShouldFail input
+
+  it "Verbatim ranged tag with too little space for code" $ do
+    let input = "  @code\na\n  @end"
+    parseBlocksShouldFail input
+
+  it "Verbatim ranged tag with empty lines" $ do
+    let input = "  @code\n \n  test\n  test\n  @end"
+        expectation =
+          Blocks [PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
+    result <- parseBlocks input
+    expectation @=? result
