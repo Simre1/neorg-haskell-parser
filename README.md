@@ -19,19 +19,18 @@ I will focus on the first three layers for now. Layers 4 and 5 are on hold for n
 
 ## Pandoc Implementation State
 
-- [ ] Layer 1: Paragraphs
-- [ ] Layer 2:
-  - [ ] Heading
-  - [ ] Lists
-  - [ ] Quotes
-  - [ ] More link locations
-  - [ ] Verbatim Ranged tags
-  - [ ] Delimiting modifiers
+- [x] Layer 1: Paragraphs
+- [x] Layer 2:
+  - [x] Heading
+  - [x] Lists
+  - [x] Quotes
+  - [ ] More link locations (not sure how to do this with pandoc)
+  - [x] Verbatim Ranged tags
+  - [x] Delimiting modifiers
 - [ ] Layer 3
 - [ ] PDF creation
 
-
-## Installation (not working yet)
+## Installation
 
 ### Using a precompiled binary
 
@@ -46,16 +45,25 @@ cabal build neorg-pandoc
 
 You can run the tests with:
 ```bash
-cabal run test
+cabal run neorg-test
 ```
 
-## Usage (not working yet)
+## Usage
 
-After having aquired a binary of `neorg-pandoc`, you can use it to transform Neorg files into Pandoc json documents. `neorg-pandoc` expects exactly one parameter, which should be the file path to the Neorg file. If parsing was successful, the json document is printed to stdout.
+After having aquired a binary of `neorg-pandoc`, you can use it to transform Neorg files into Pandoc json documents. You have two ways of feeding your norg document to `neorg-pandoc`:
+1. `-f file.norg`: neorg-pandoc will read file.norg and print a pandoc json to stdout
+2. `-i`: neorg-pandoc will read stdin and print a pandoc json to stdout
+
+Errors are thrown on stderr.
 
 An example usage might be:
 ```bash
-./neorg-pandoc-linux86 testing/test.norg | pandoc -f json -o testing/out.pdf
+./neorg-pandoc-linux86 -f testing/test.norg | pandoc -f json -o testing/out.pdf
 ```
 
 Here, I have used the `neorg-pandoc-linux86` binary to transform my `norg` file into the pandoc `json` format. The result is piped into pandoc to create a pdf. The `-f json` argument tells pandoc that the input is a `json` file  and `-o testing/out.pdf` is the location of the `pdf` file. It is also possible to transform your `norg` file into other formats; for example to markdown by replacing `-o testing/out.pdf` with `-o testing/out.md`. For further options refer to the `pandoc` documentation.
+
+## How to Contribute
+
+1. Fix one of the issues
+2. Find parsing errors and create issues for them using the parsing error template
