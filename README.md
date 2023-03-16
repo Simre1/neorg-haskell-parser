@@ -7,20 +7,20 @@ Reimplementation of the parser with the [Neorg markup specification](https://git
 I will focus on the first three layers for now. Layers 4 and 5 are on hold for now.
 
 - [x] Layer 1: Paragraphs
-- [ ] Layer 2:
+- [x] Layer 2:
   - [x] Heading
   - [x] Lists
   - [x] Quotes
-  - [ ] More link locations
-  - [ ] Verbatim Ranged tags
-  - [ ] Delimiting modifiers
+  - [x] More link locations
+  - [x] Verbatim Ranged tags
+  - [x] Delimiting modifiers
 - [ ] Layer 3
 - [ ] PDF creation
 
 ## Pandoc Implementation State
 
 - [x] Layer 1: Paragraphs
-- [x] Layer 2:
+- [ ] Layer 2:
   - [x] Heading
   - [x] Lists
   - [x] Quotes
