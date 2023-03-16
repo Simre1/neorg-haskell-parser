@@ -2,6 +2,10 @@
 
 Reimplementation of the parser with the [Neorg markup specification](https://github.com/nvim-neorg/norg-specs). It will be able to transform .norg files to the [pandoc](https://github.com/jgm/pandoc) AST and subsequently to the plethora of formats that pandoc supports.
 
+## Create an issue if you find unexpected behavior!
+
+Help me to find all edge cases of the parser. If you find a parsing error, you can create an issue with the **Parsing / Generation error** template.
+
 ## Parser Implementation State
 
 I will focus on the first three layers for now. Layers 4 and 5 are on hold for now.
