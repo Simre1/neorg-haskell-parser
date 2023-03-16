@@ -1,4 +1,4 @@
-# Revision history for neorg-pandoc
+# Revision history for neorg
 
 ## 0.1.0.0 -- YYYY-mm-dd
 

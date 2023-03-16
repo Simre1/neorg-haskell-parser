@@ -1,10 +1,10 @@
-module Main where
+module Main (main) where
 
-import Test.Tasty
-import Parser
+import Block 
+import Paragraph
+import Test.Hspec
 
 main :: IO ()
-main = defaultMain tests
-
-tests :: TestTree
-tests = testGroup "Tests" [parserTests]
+main = hspec $ do
+  paragraphSpec
+  blockSpec

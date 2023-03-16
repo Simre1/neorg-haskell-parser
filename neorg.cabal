@@ -1,78 +1,85 @@
 cabal-version:      2.4
 name:               neorg
 version:            0.1.0.0
-
--- A short (one-line) description of the package.
--- synopsis:
+synopsis:
 
 -- A longer description of the package.
 -- description:
+homepage:
 
 -- A URL where users can report bugs.
 -- bug-reports:
-
--- The license under which the package is released.
--- license:
+license:            MIT
+license-file:       LICENSE
 author:             Simon Reitinger
-maintainer:         simre4775@gmail.com
+maintainer:
 
 -- A copyright notice.
 -- copyright:
--- category:
+category:           Text
 extra-source-files: CHANGELOG.md
 
-common common
-  default-extensions:
-    ScopedTypeVariables,
-    GADTs,
-    FlexibleInstances,
-    FlexibleContexts,
-    MultiParamTypeClasses,
-    GeneralizedNewtypeDeriving,
-    LambdaCase,
-    MultiWayIf,
-    TypeFamilies,
-    TypeApplications,
-    DataKinds,
-    PolyKinds,
-    TypeOperators,
-    OverloadedStrings,
-    RankNTypes,
-    MultiWayIf,
-    TupleSections,
-    ViewPatterns,
-    StandaloneDeriving,
-    ConstraintKinds,
-    DerivingStrategies
-  ghc-options: -O0 -Wall
-  default-language: Haskell2010
-
 library
-    import: common
-    exposed-modules:  Neorg, Neorg.Document, Neorg.Parser.Main, Neorg.Parser.Paragraph, Neorg.Document.Tag, Type.Set, Neorg.Parser.Utils, Neorg.Parser.Types, Neorg.Parser.Block, Neorg.Parser.Tags, Type.Forall, Neorg.Parser.Tags.Classes, Effect.Logging
+    exposed-modules:  
+      Neorg.Parser
+      Neorg.Parser.Document
+      Neorg.Parser.Error
+      Neorg.Parser.Paragraph
+      Neorg.Parser.Base
+      Neorg.Parser.Combinators
+      Neorg.Parser.Block
+      Neorg.Parser.Delimiter
+      Neorg.Parser.Tag
+      Neorg.Document
 
     -- Modules included in this library but not exported.
     -- other-modules:
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base >=4.14.2.0, text, vector, containers, megaparsec, time, transformers, optics-core, optics-th, data-default, cleff, cleff, text-builder
+    build-depends:    
+      base ^>=4.16.4.0,
+      megaparsec,
+      containers,
+      vector,
+      transformers,
+      text,
+      bytestring,
+      parser-combinators,
+      these
     hs-source-dirs:   src
-    -- include-dirs: tree-sitter-norg/src
-    -- c-sources: tree-sitter-norg/src/parser.c, tree-sitter-norg/src/scanner.cc
-    -- install-includes: tree_sitter/parser.h
-    -- extra-libraries:     stdc++
+    default-language: GHC2021
+    default-extensions: OverloadedStrings, LambdaCase, DuplicateRecordFields
 
 executable neorg-pandoc
-  import: common
-  main-is: Main.hs
-  build-depends: base >=4.14.2.0, text, vector, containers, bytestring, aeson, pandoc-types, optics-core, neorg, transformers, cleff
-  hs-source-dirs: pandoc
+    main-is:          Main.hs
 
-test-suite test
-    import: common
-    type:       exitcode-stdio-1.0
-    main-is:    Main.hs
-    other-modules: Parser
-    hs-source-dirs: test
-    build-depends: neorg, tasty, tasty-hunit, base, text, megaparsec, transformers, vector, optics-core, time, cleff
+    -- Modules included in this executable, other than Main.
+    -- other-modules:
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+    build-depends:
+        base ^>=4.16.4.0,
+        neorg,
+        containers,
+        transformers,
+        bytestring,
+        text,
+        aeson,
+        pandoc-types,
+        optparse-applicative
+    hs-source-dirs:   app
+    default-language: GHC2021
+    default-extensions: OverloadedStrings, LambdaCase, TupleSections
+
+test-suite neorg-test
+    default-language: GHC2021
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    other-modules:
+      Paragraph
+      Block
+    build-depends:    base ^>=4.16.4.0, neorg, hspec, HUnit, text, these
+    default-extensions: OverloadedStrings, LambdaCase

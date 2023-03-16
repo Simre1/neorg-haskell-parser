@@ -1,320 +1,208 @@
-{-# LANGUAGE TemplateHaskell #-}
-
 module Neorg.Parser.Paragraph where
 
-import Cleff
-import Cleff.State
-import Control.Applicative (Alternative ((<|>)))
-import Control.Monad (guard, void)
-import Control.Monad.Trans.Class (lift)
-import Data.Char (isAlphaNum, isLetter)
-import qualified Data.Set as S
-import Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Vector as V
+import Control.Applicative (liftA2)
+import Control.Monad
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.State
+import Data.Bool
+import Data.Set qualified as S
+import Data.Text hiding (dropWhile, init, last, reverse)
+import Data.Text qualified as T hiding (dropWhile, reverse)
+import Data.These
 import Neorg.Document
-import Neorg.Parser.Types (Parser)
-import Neorg.Parser.Utils
-import Optics.Core (view, (%~), (.~), (<&>), (^.))
-import Optics.TH (makeLenses)
-import qualified Text.Megaparsec as P
-import qualified Text.Megaparsec.Char as P
+import Neorg.Parser.Base
+import Neorg.Parser.Combinators
+import Neorg.Parser.Delimiter (delimiterBreak)
+import Neorg.Parser.Tag
+import Text.Megaparsec hiding (satisfy)
 
-data InlineState = InlineState {_modifierInline :: ModifierInline, _delimitedActive :: Bool} deriving (Show)
+type ParagraphParser a = StateT ParagraphState Parser a
 
-data ModifierInline = NoModifier Inline | OpenModifier Text Inline ModifierInline deriving (Show)
+newtype ParagraphState = ParagraphState
+  { previousElement :: ParagraphElement
+  }
+  deriving (Show, Eq)
 
-makeLenses ''InlineState
+paragraphSegment :: Parser Paragraph
+paragraphSegment = lexeme $ paragraphWithEnd (True <$ paragraphSegmentBreak)
 
-makeLenses ''ModifierInline
+paragraph :: Parser Paragraph
+paragraph = lexeme $ paragraphWithEnd (True <$ paragraphBreak)
 
-hasModifier :: Text -> ModifierInline -> Bool
-hasModifier _ (NoModifier _) = False
-hasModifier c1 (OpenModifier c2 _ b) = c1 == c2 || hasModifier c1 b
+paragraphWithEnd :: Parser Bool -> Parser Paragraph
+paragraphWithEnd =
+  flip evalStateT (ParagraphState Space) . paragraphWithEnd' . lift
 
-initialInlineState :: InlineState
-initialInlineState = InlineState (NoModifier (ConcatInline V.empty)) False
+paragraphWithEnd' :: ParagraphParser Bool -> ParagraphParser Paragraph
+paragraphWithEnd' end = do
+  notFollowedBy $ lift detachedModifierStart
+  result <- collect1 end' $ do
+    element <-
+      choice
+        [ either Punctuation Word <$> escapeChar,
+          uncurry Link <$> lift link,
+          uncurry StyledParagraph <$> styleModifier,
+          uncurry VerbatimParagraph <$> verbatimModifier,
+          Word <$> lift word,
+          Punctuation <$> lift punctuation,
+          Space <$ lift emptyLines1
+        ]
+    modify (\state -> state {previousElement = element})
+    pure element
 
-runInline :: Parser (State InlineState ': es) () -> Parser es Inline
-runInline p = fmap canonalizeInline $ do
-  inlineState <- runParserState initialInlineState (p >> lift get)
-  pure $ reduceModifierInline $ inlineState ^. modifierInline
+  maybe (fail "Not a valid paragraph") pure result
   where
-    reduceModifierInline :: ModifierInline -> Inline
-    reduceModifierInline (NoModifier i) = i
-    reduceModifierInline (OpenModifier c i b) = ConcatInline $ V.fromList [reduceModifierInline b, Text c, i]
+    end' :: ParagraphParser ([ParagraphElement] -> Maybe Paragraph)
+    end' = do
+      isValid <- end
+      if isValid
+        then pure $ pure . ParagraphCons . removeTrailingWhitespace
+        else pure $ const Nothing
+    removeTrailingWhitespace elements = reverse $ dropWhile (== Space) $ reverse elements
 
--- | Builds up the paragraph within InlineState until the end parser matches
-paragraph' :: forall es. State InlineState :> es => Parser es () -> Parser es ()
-paragraph' end' =
-  (end >> pure ())
-    <|> (P.hspace >> lookChar >>= \c -> attachedOpenings c <|> everywhere c)
+escapeChar :: ParagraphParser (Either Char Text)
+escapeChar = try $ do
+  lift $ char '\\'
+  c <- lift $ satisfy (> ' ')
+  pure $
+    if S.member c punctuationCharacters
+      then Left c
+      else Right $ pack [c]
+
+styleModifier :: ParagraphParser (ParagraphStyle, Paragraph)
+styleModifier = try $ do
+  style <- styleStart
+  paragraph <- paragraphWithEnd' (True <$ styleEnd style <|> False <$ lift paragraphBreak)
+  pure (style, paragraph)
   where
-    end =
-      end' <|> P.eof
-    appendInlineToStack :: Inline -> Parser es ()
-    appendInlineToStack t =
-      lift $
-        modify $
-          modifierInline %~ \case
-            NoModifier i -> NoModifier $ i <> t
-            OpenModifier c i b -> OpenModifier c (i <> t) b
-    popStack :: Text -> (Inline -> Inline) -> Parser es ()
-    popStack c f = do
-      s <- lift $ gets (view modifierInline)
-      new <- close s
-      lift $ modify $ modifierInline .~ new
-      where
-        close (NoModifier _) = fail "No closing"
-        close (OpenModifier cm i b) =
-          case b of
-            (OpenModifier cd id' bd) -> if c == cm then pure (OpenModifier cd (id' <> f i) bd) else close (OpenModifier cd (id' <> Text cm <> i) bd)
-            (NoModifier id') -> if c == cm then pure (NoModifier (id' <> f i)) else fail "No closing"
-    pushStack :: Text -> Parser es ()
-    pushStack c = do
-      s <- lift $ gets (view modifierInline)
-      new <- case s of
-        NoModifier i -> pure $ OpenModifier c mempty (NoModifier i)
-        stack@OpenModifier {} ->
-          if not $ hasModifier c stack
-            then pure $ OpenModifier c mempty stack
-            else fail "No open modifier"
-      lift $ modify $ modifierInline .~ new
+    styleStart :: ParagraphParser ParagraphStyle
+    styleStart = choice $ do
+      style <- [minBound .. maxBound]
+      pure $ style <$ attachedModifierStart (styleToChar style)
 
-    parseTextModifier :: Parser es () -> Text -> (Text -> Inline) -> Parser es ()
-    parseTextModifier follow char f = P.string char >> P.try (go "") <|> word (T.head char)
-      where
-        go :: Text -> Parser es ()
-        go previousText = do
-          text <- P.takeWhileP (Just "Inline Text modifier") (\c -> c /= T.last char && c /= '\n' && c /= '\r')
-          let fullText = previousText <> text
-          ( do
-              void $ P.string $ T.reverse char
-              followedBy follow
-              appendInlineToStack (f fullText)
-              lift $ modify (delimitedActive .~ False)
-              withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> everywhere c
-            )
-            <|> (newline >> P.hspace >> newline >> fail "No Text modifier")
-            <|> (newline >> P.hspace >> go fullText)
+    styleEnd :: ParagraphStyle -> ParagraphParser ()
+    styleEnd style = attachedModifierEnd (styleToChar style)
 
-    attachedOpenings :: Char -> Parser es ()
-    attachedOpenings = \case
-      '*' -> parseOpening "*"
-      '/' -> parseOpening "/"
-      '_' -> parseOpening "_"
-      '-' -> parseOpening "-"
-      ',' -> parseOpening ","
-      '|' -> parseOpening "|"
-      '^' -> parseOpening "^"
-      '`' -> parseTextModifier follow "`" Verbatim
-      '$' -> parseTextModifier follow "$" Math
-      -- '=' -> parseOpening TODO: Behavior unclear
-      _ -> fail "No attachedOpenings"
-      where
-        follow =
-          singleSpace <|> lNewline
-            <|> withNextChar
-              (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
-        parseOpening c = do
-          P.try $ do
-            anyChar >> withNextChar (\c' -> guard $ (isAlphaNum c' || isLetter c') || S.member c' specialSymbols)
-            pushStack c
-            lift $ modify (delimitedActive .~ False)
-            withNextChar (\cn -> attachedOpenings cn <|> everywhere cn)
+verbatimModifier :: ParagraphParser (VerbatimType, Text)
+verbatimModifier = try $ do
+  verbatimType <- verbatimStart
+  text <- lift $ verbatim (verbatimToChar verbatimType) (verbatimEnd $ verbatimToChar verbatimType)
+  pure (verbatimType, text)
+  where
+    verbatimStart :: ParagraphParser VerbatimType
+    verbatimStart = choice $ do
+      verbatimType <- [minBound .. maxBound]
+      pure $ verbatimType <$ attachedModifierStart (verbatimToChar verbatimType)
 
-    attachedClosings :: Char -> Parser es ()
-    attachedClosings = \case
-      '*' -> parseClosing "*" Bold
-      '/' -> parseClosing "/" Italic
-      '_' -> parseClosing "_" Underline
-      '-' -> parseClosing "-" Strikethrough
-      '^' -> parseClosing "^" Superscript
-      ',' -> parseClosing "," Subscript
-      '|' -> parseClosing "|" Spoiler
-      _ -> fail "No attached closings"
-      where
-        parseClosing c f = do
-          P.try $ do
-            P.string c
-              >> followedBy
-                ( singleSpace <|> lNewline
-                    <|> withNextChar
-                      (guard . flip S.member (punctuationSymbols <> attachedModifierSymbols))
-                )
-            popStack c f
-          lift $ modify (delimitedActive .~ False)
-          withNextChar $ \c' -> parWhitespace c' <|> attachedClosings c' <|> attachedOpenings c' <|> everywhere c'
+    verbatimEnd :: Char -> Text -> Parser ()
+    verbatimEnd c line =
+      evalStateT
+        (attachedModifierEnd c)
+        (ParagraphState $ if T.last line == ' ' then Space else Word (pack [T.last line]))
 
-    word :: Char -> Parser es ()
-    word c = do
-      lift $ modify (delimitedActive .~ False)
-      if S.member c (punctuationSymbols <> attachedModifierSymbols)
-        then
-          ( P.try
-              ( do
-                  guard (c == '\\')
-                  a <- anyChar >> anyChar
-                  guard (a > ' ')
-                  pure a
-              )
-              >>= \x -> do
-                appendInlineToStack
-                  (Text $ T.pack [x])
-                withNextChar $
-                  \c' -> parWhitespace c' <|> attachedClosings c' <|> attachedOpenings c' <|> everywhere c'
-          )
-            <|> ( do
-                    p <- anyChar <&> T.pack . (: [])
-                    appendInlineToStack (Text p)
-                    withNextChar $ \c' -> parWhitespace c' <|> attachedClosings c' <|> attachedOpenings c' <|> everywhere c'
-                )
-        else
-          ( do
-              w <- P.takeWhile1P (Just "Word") (\c' -> c' > ' ' && S.notMember c' (punctuationSymbols <> attachedModifierSymbols))
-              appendInlineToStack (Text w)
-              withNextChar $ \c' -> parWhitespace c' <|> attachedClosings c' <|> everywhere c'
-          )
+link :: Parser (LinkLocation, Maybe Paragraph)
+link = try $ do
+  location <- linkLocation
+  label <- optional linkLabel
+  pure (location, label)
+  where
+    linkLocation = try $ do
+      char '{'
+      notFollowedBy (void newline <|> eof)
+      choice [CurrentFile <$> norgLocation, norgFile, urlLocation]
+    linkLabel = try $ do
+      char '['
+      notFollowedBy (void newline <|> eof)
+      paragraphWithEnd $ do
+        atBeginning <- atBeginningOfLine
+        (not atBeginning <$ char ']') <|> (False <$ paragraphBreak)
+    urlLocation = do
+      url <- verbatim '}' (\line -> guard (T.length (T.strip line) > 0) >> void (char '}'))
+      pure $ Url url
+    norgFile = do
+      char ':'
+      path <- linkVerbatim ':'
+      location <- Just <$> norgLocation <|> Nothing <$ char '}'
+      pure $ NorgFile path location
+    norgLocation = do
+      choice
+        [ LineNumberLocation <$> naturalNumber >-> char '}',
+          MagicLocation <$> (char '#' >> space >> linkVerbatim '}'),
+          uncurry HeadingLocation <$> liftA2 (,) (repeating '*' >-> space) (linkVerbatim '}')
+        ]
+    linkVerbatim c = verbatim c (\line -> guard (T.length (T.strip line) > 0) >> void (char c))
 
-    punctuationSymbols = S.fromList "?!:;,.<>()[]{}'\"/#%&$£€-*\\~"
-    attachedModifierSymbols = S.fromList "*/_-^,|`$="
+verbatim :: Char -> (Text -> Parser ()) -> Parser Text
+verbatim endChar endParser = do
+  line <- takeWhile1Chars (Just "verbatim") (\c -> c /= '\n' && c /= '\r' && c /= endChar)
+  guard $ T.length line > 0
+  choice
+    [ line <$ endParser line,
+      newline >> notFollowedBy paragraphBreak >> ((line <>) <$> verbatim endChar endParser)
+    ]
 
-    specialSymbols = attachedModifierSymbols <> punctuationSymbols
+attachedModifierStart :: Char -> ParagraphParser ()
+attachedModifierStart c = try $ do
+  get
+    >>= ( guard . \case
+            Space -> True
+            (Punctuation _) -> True
+            _ -> False
+        )
+      . previousElement
+  lift $ char c
+  lift $ notFollowedBy (space <|> void newline <|> void eof)
+  pure ()
 
-    withNextChar :: (Char -> Parser es ()) -> Parser es ()
-    withNextChar f = end <|> (lookChar >>= f)
+attachedModifierEnd :: Char -> ParagraphParser ()
+attachedModifierEnd c = try $ do
+  get
+    >>= ( guard . \case
+            Space -> False
+            _ -> True
+        )
+      . previousElement
+  lift $ char c
+  lift $ followedBy $ space <|> void punctuation <|> void newline <|> void eof
 
-    intersectingModifier :: Char -> Parser es ()
-    intersectingModifier c1 = do
-      c2 <- followedBy $ anyChar >> anyChar
-      case c1 : [c2] of
-        ":*" -> intersectingOpen ":*"
-        ":/" -> intersectingOpen ":/"
-        ":_" -> intersectingOpen ":_"
-        ":-" -> intersectingOpen ":-"
-        ":^" -> intersectingOpen ":^"
-        ":," -> intersectingOpen ":,"
-        ":|" -> intersectingOpen ":|"
-        ":`" -> parseTextModifier (pure ()) ":`" Verbatim
-        ":$" -> parseTextModifier (pure ()) ":$" Math
-        "*:" -> intersectingClosed ":*" Bold
-        "/:" -> intersectingClosed ":/" Italic
-        "_:" -> intersectingClosed ":_" Underline
-        "-:" -> intersectingClosed ":-" Strikethrough
-        "^:" -> intersectingClosed ":^" Superscript
-        ",:" -> intersectingClosed ":," Subscript
-        "|:" -> intersectingClosed ":|" Spoiler
-        _ -> fail "No intersecting modifier"
-      where
-        intersectingClosed mod' f = do
-          void $ P.string $ T.reverse mod'
-          popStack mod' f
-          next
-        intersectingOpen mod' = do
-          void $ P.string mod'
-          pushStack mod'
-          next
-        next = do
-          lift $ modify (delimitedActive .~ True)
-          withNextChar $ \c -> parWhitespace c <|> attachedClosings c <|> attachedOpenings c <|> everywhere c
+styleToChar :: ParagraphStyle -> Char
+styleToChar Bold = '*'
+styleToChar Italic = '/'
+styleToChar Underline = '_'
+styleToChar Spoiler = '!'
+styleToChar Superscript = '^'
+styleToChar Subscript = ','
+styleToChar StrikeThrough = '-'
 
-    parWhitespace :: Char -> Parser es ()
-    parWhitespace c =
-      case c of
-        ' ' -> do
-          appendInlineToStack Space
-          next
-        '~' -> do
-          P.try (anyChar >> P.hspace >> newline)
-          next
-        '\n' -> do
-          lNewline
-          lift $ modify (delimitedActive .~ True)
-          next
-        '\r' -> do
-          lNewline
-          lift $ modify (delimitedActive .~ True)
-          next
-        _ -> fail "No newline or space"
-      where
-        next = do
-          P.hspace
-          withNextChar (\c' -> parWhitespace c' <|> attachedOpenings c' <|> everywhere c')
-    link :: Char -> Parser es ()
-    link = \case
-      '{' -> do
-        P.try $ do
-          target <- linkTarget
-          text <- P.optional linkText
-          appendInlineToStack $ Link $ LinkCons target text Nothing
-        withNextChar $ \c -> parWhitespace c <|> attachedOpenings c <|> attachedClosings c <|> everywhere c
-        pure ()
-      _ -> do
-        fail "No link"
-      where
-        linkTarget = do
-          _ <- P.char '{'
-          lt <-
-            (<|> LinkTargetUrl <$> rawText (== '}'))
-              . P.try
-              $ lookChar >>= \case
-                '@' -> P.char '@' >> P.hspace1 >> LinkTargetFile <$> file (== '}')
-                ':' -> do
-                  _ <- P.char ':'
-                  f <- file (== ':')
-                  _ <- P.char ':'
-                  target <- P.optional $ lookChar >>= linkTargetWithinDocument
-                  pure $ LinkTargetNorgFile f target
-                c -> LinkTargetCurrentDocument <$> linkTargetWithinDocument c
-          _ <- P.char '}'
-          pure lt
-        rawText endSymbol = do
-          txt <- T.strip <$> P.takeWhileP (Just "Inline Text modifier") (\c -> not (endSymbol c) && c /= '\n' && c /= '\r')
-          guard $ T.length txt > 0
-          pure txt
-        file endSymbol =
-          let currentWorkspace = (P.char '/' >> CurrentWorkspace <$> rawText endSymbol)
-              otherWorkspace = do
-                workspaceName <- P.takeWhile1P (Just "workspace name") (\c -> c /= '/' && c /= '\n' && c /= '\r')
-                _ <- P.char '/'
-                Workspace workspaceName <$> rawText endSymbol
-              absolute = P.char '/' >> Absolute <$> rawText endSymbol
-              relative = Relative <$> rawText endSymbol
-           in (P.char '$' >> currentWorkspace <|> otherWorkspace) <|> absolute <|> relative
-        linkTargetWithinDocument c = do
-          case c of
-            '*' -> do
-              lvl <- repeatingLevel '*' -- heading
-              P.hspace1
-              LinkTargetHeading lvl <$> targetName
-            '$' -> P.char '$' >> P.hspace1 >> LinkTargetDefinition <$> targetName
-            '^' -> P.char '^' >> P.hspace1 >> LinkTargetFootnote <$> targetName
-            '|' -> P.char '|' >> P.hspace1 >> LinkTargetMarker <$> targetName
-            '#' -> P.char '#' >> P.hspace1 >> LinkTargetAny <$> targetName
-            _ -> fail "no link target within document"
-        targetName = TargetName <$> runInline (paragraph' $ P.lookAhead $ void (P.char '}') <|> newline)
-        linkText = do
-          _ <- P.char '['
-          para <- runInline $ do
-            lift $ modify $ delimitedActive .~ False
-            paragraph' $ P.lookAhead $ void (P.char ']') <|> newline
-          _ <- P.char ']'
-          pure para
-    everywhere c = link c <|> intersectingModifier c <|> word c
+verbatimToChar :: VerbatimType -> Char
+verbatimToChar Math = '$'
+verbatimToChar Code = '`'
 
-paragraph :: forall es. Parser es Inline
-paragraph = runInline $ do
-  lift $ modify $ delimitedActive .~ False
-  paragraph' $
-    P.lookAhead $
-      doubleNewline
-        <|> P.try
-          ( do
-              lift (gets (view delimitedActive)) >>= guard
-              isMarkupElement >>= guard
-          )
+word :: Parser Text
+word = takeWhile1Chars (Just "Word") $ \c -> c > ' ' && not (S.member c punctuationCharacters)
 
-singleLineParagraph :: Parser p Inline
-singleLineParagraph = runInline $ do
-  lift $ modify $ delimitedActive .~ False
-  paragraph' (P.lookAhead newline)
+punctuation :: Parser Char
+punctuation = satisfy $ \c -> S.member c punctuationCharacters
+
+punctuationCharacters :: S.Set Char
+punctuationCharacters = S.fromList "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+
+paragraphBreak :: Parser ()
+paragraphBreak =
+  choice
+    [ eof,
+      linesOfWhitespace >>= guard . (>= 2),
+      atBeginningOfLine >>= guard >> detachedModifierStart,
+      delimiterBreak,
+      tagBreak
+    ]
+
+paragraphSegmentBreak :: Parser ()
+paragraphSegmentBreak = choice [eof, linesOfWhitespace >>= guard . (>= 1)]
+
+detachedModifierStart :: Parser ()
+detachedModifierStart = lookAhead $ do
+  choice $ flip fmap detachedModifierSymbols $ void . detachedModifier
+
+detachedModifierSymbols :: String
+detachedModifierSymbols = "*-~>"
