@@ -1,5 +1,6 @@
 module Main where
 
+import Control.Monad
 import Control.Monad.Trans.State
 import Data.Aeson (encode)
 import Data.ByteString.Lazy qualified as B
@@ -10,17 +11,41 @@ import Data.Text.IO qualified as T
 import Neorg.Document
 import Neorg.Parser.Base
 import Neorg.Parser.Document (document)
+import Options.Applicative
 import System.Environment (getArgs)
 import System.IO (stderr)
 import Text.Pandoc.Builder qualified as P
 
+data InputArgs = TransformFile String | TransformSTDIN
+
 main :: IO ()
 main = do
-  args <- getArgs
-  input <- case args of
-    [fileName] -> Just . (,fileName) <$> T.readFile fileName
-    [] -> Just . (,"STDIN") <$> T.getContents
-    _ -> pure Nothing
+  input <- execParser $ info args infoMod
+  parseAndTransform input
+  where
+    infoMod = fullDesc
+    args =
+      TransformFile
+        <$> strOption
+          ( long "file"
+              <> short 'f'
+              <> action "file"
+              <> help "Specify a file to read in and transform it to a pandoc json"
+          )
+        <|> flag'
+          TransformSTDIN
+          ( long "stdin"
+              <> short 'i'
+              <> help "Read a norg file in on stdin and transform it to a pandoc json"
+          )
+
+parseAndTransform :: InputArgs -> IO ()
+parseAndTransform inputArgs = do
+  input <- case inputArgs of
+    TransformFile fileName -> do
+      guard $ fileName /= "--help" || fileName /= "-h"
+      Just . (,fileName) <$> T.readFile fileName
+    TransformSTDIN -> Just . (,"STDIN") <$> T.getContents
 
   case input of
     Just (content, name) -> do
@@ -42,13 +67,16 @@ runConvert :: Convert a -> IO a
 runConvert (Convert io) = io
 
 convertDocument :: Document -> Convert P.Pandoc
-convertDocument (Document (Blocks blocks)) = P.doc . mconcat <$> traverse convertBlock blocks
+convertDocument (Document blocks) = P.doc <$> convertBlocks blocks
 
 convertBlock :: Block -> Convert P.Blocks
 convertBlock = \case
   Heading heading -> convertHeading heading
   PureBlock pb -> convertPureBlock pb
-  HorizontalRule -> undefined
+  HorizontalRule -> pure P.horizontalRule
+
+convertBlocks :: Blocks -> Convert P.Blocks
+convertBlocks (Blocks blocks) = mconcat <$> traverse convertBlock blocks
 
 convertPureBlock :: PureBlock -> Convert P.Blocks
 convertPureBlock = \case
@@ -56,51 +84,45 @@ convertPureBlock = \case
   Quote quote -> convertQuote quote
   List list -> convertList list
 
+convertPureBlocks :: PureBlocks -> Convert P.Blocks
+convertPureBlocks (PureBlocks blocks) = mconcat <$> traverse convertPureBlock blocks
+
 convertList :: List -> Convert P.Blocks
-convertList (ListCons level ordering items) = undefined
+convertList (ListCons level ordering items) = do
+  makeList <$> traverse makeItem items
+  where
+    makeItem (maybeTaskStatus, item) = do
+      taskStatus <- traverse convertTaskStatus maybeTaskStatus
+      blocks <- convertPureBlocks item
+      pure $ maybe mempty P.plain taskStatus <> blocks
+    makeList = case ordering of
+      OrderedList -> P.orderedList
+      UnorderedList -> P.bulletList
 
 convertHeading :: Heading -> Convert P.Blocks
-convertHeading = undefined
+convertHeading (HeadingCons level status title content) = do
+  titleText <- convertParagraph title
+  taskStatus <- traverse convertTaskStatus status
+  let ref = T.intercalate "-" $ T.words $ T.toLower $ paragraphToText title
+  content <- convertBlocks content
+  pure $ P.headerWith (ref, [], []) level (maybe titleText (<> titleText) taskStatus) <> content
 
 convertQuote :: Quote -> Convert P.Blocks
-convertQuote = undefined
+convertQuote (QuoteCons level status content) = do
+  taskStatus <- traverse convertTaskStatus status
+  blocks <- convertPureBlocks content
+  pure $ P.blockQuote $ maybe mempty P.plain taskStatus <> blocks
 
---
---  ->
---   fmap (P.bulletList) $
---     traverse (applicativeConcatMap $ convertPureBlock handler) $
---       ul ^. uListItems
--- OrderedList ol ->
---   fmap (P.orderedList) $
---     traverse (applicativeConcatMap $ convertPureBlock handler) $
---       ol ^. oListItems
--- TaskList tl ->
---   let convertTaskListBlock taskStatus lb = convertPureBlock handler lb
---    in fmap (P.bulletList . V.toList) $
---         traverse (\(taskStatus, items) -> applicativeConcatMap (convertTaskListBlock taskStatus) items) $
---           tl ^. tListItems
---
--- convertQuote :: Quote -> Convert P.Blocks
--- convertQuote quote = P.blockQuote . P.para <$> convertInline (quote ^. quoteContent)
---
--- convertHeading :: TagHandler tags (Convert P.Blocks) -> Heading -> Convert P.Blocks
--- convertHeading handler heading = do
---   text <- convertInline $ heading ^. headingText
---   let ref = T.intercalate "-" $ T.words $ T.toLower $ inlineToText $ heading ^. headingText
---   pure $ P.headerWith (ref, [], []) (succ . fromEnum $ heading ^. headingLevel) text
---
--- convertDefinition :: TagHandler tags (Convert P.Blocks) -> Definition tags -> Convert P.Blocks
--- convertDefinition handler definition = do
---   definitionText <- convertInline $ definition ^. definitionObject
---   definitionBlocks <- traverse (convertPureBlock handler) $ definition ^. definitionContent
---   pure $ P.definitionList [(definitionText, V.toList definitionBlocks)]
---
--- convertDelimiter :: Delimiter -> Convert P.Blocks
--- convertDelimiter delimiter = case delimiter of
---   HorizonalLine -> pure P.horizontalRule
---   _ -> pure mempty
---
---
+convertTaskStatus :: TaskStatus -> Convert P.Inlines
+convertTaskStatus status = pure $ P.text $ case status of
+  Undone -> "u "
+  Done -> "d "
+  Unclear -> "u "
+  Urgent -> "u "
+  Recurring -> "r "
+  InProgress -> "i "
+  OnHold -> "o "
+  Cancelled -> "c "
 
 convertParagraph :: Paragraph -> Convert P.Inlines
 convertParagraph (ParagraphCons elems) = mconcat <$> traverse convertParagraphElement elems
@@ -130,17 +152,27 @@ convertParagraphElement = \case
     let description def = fromMaybe def maybeDescriptionPandoc
     case location of
       Url path -> pure $ P.link path "" $ description (P.text path)
-      ExternalFile path -> do
-        warning "External files cannot be properly linked"
-        pure $ P.link path "" $ description (P.text path)
       NorgFile path norgLocation -> do
         warning "Norg files cannot be properly linked"
-        pure $ P.link path "" $ description (maybe (P.text path) ((P.text path <>) . norgLocationDescription) norgLocation)
+        pure $ P.link path "" $ description (maybe (P.text path) ((P.text path <>) . P.text . norgLocationDescription) norgLocation)
       CurrentFile norgLocation -> do
-        pure $ P.link (norgLocationLink norgLocation) "" $ description $ norgLocationDescription norgLocation
+        pure $ P.link (norgLocationLink norgLocation) "" $ description $ P.text $ norgLocationDescription norgLocation
   where
     norgLocationLink (HeadingLocation _ t) = T.pack "#" <> T.intercalate "-" (T.words $ T.toLower t)
     norgLocationLink _ = ""
-    norgLocationDescription (HeadingLocation _ t) = P.text t
-    norgLocationDescription (LineNumberLocation i) = P.text $ T.pack (show i)
-    norgLocationDescription (MagicLocation t) = P.text t
+
+norgLocationDescription (HeadingLocation _ t) = t
+norgLocationDescription (LineNumberLocation i) = T.pack (show i)
+norgLocationDescription (MagicLocation t) = t
+
+paragraphToText :: Paragraph -> Text
+paragraphToText (ParagraphCons paraElements) = flip foldMap paraElements $ \case
+  Word t -> t
+  Punctuation char -> T.pack [char]
+  Space -> " "
+  StyledParagraph _ para -> paragraphToText para
+  VerbatimParagraph _ verbatimText -> verbatimText
+  Link linkLocation maybeDescription -> flip fromMaybe (paragraphToText <$> maybeDescription) $ case linkLocation of
+    CurrentFile norgLocation -> norgLocationDescription norgLocation
+    Url path -> path
+    NorgFile path norgLocation -> path <> maybe "" norgLocationDescription norgLocation

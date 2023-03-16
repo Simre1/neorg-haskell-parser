@@ -51,7 +51,7 @@ library
     default-language: GHC2021
     default-extensions: OverloadedStrings, LambdaCase, DuplicateRecordFields
 
-executable neorg
+executable neorg-pandoc
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
@@ -67,10 +67,8 @@ executable neorg
         bytestring,
         text,
         aeson,
-        pandoc-types
-
-
-
+        pandoc-types,
+        optparse-applicative
     hs-source-dirs:   app
     default-language: GHC2021
     default-extensions: OverloadedStrings, LambdaCase, TupleSections

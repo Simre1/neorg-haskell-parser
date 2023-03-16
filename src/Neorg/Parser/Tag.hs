@@ -2,12 +2,12 @@ module Neorg.Parser.Tag where
 
 import Control.Applicative (liftA2, liftA3)
 import Control.Monad
+import Data.List (intersperse)
 import Data.Text (Text, pack)
 import Neorg.Document
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
 import Text.Megaparsec
-import Data.List (intersperse)
 
 tagBreak :: Parser ()
 tagBreak = try $ lookAhead $ do
@@ -28,7 +28,7 @@ verbatimRangedTag = do
   guard $ name /= "end"
   newline
   !content <- withinTag '@' whitespaceToSkip takeLine
-  
+
   pure $ VerbatimRangedTagCons name parameters $ mconcat $ intersperse "\n" $ filter (/= "") content
 
 withinTag :: Char -> Int -> Parser a -> Parser [a]

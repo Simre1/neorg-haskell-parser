@@ -2,7 +2,7 @@ module Block where
 
 import Data.Text
 import Neorg.Document
-import Neorg.Parser.Base (parseTextAnySource, emptyLines)
+import Neorg.Parser.Base (emptyLines, parseTextAnySource)
 import Neorg.Parser.Block (blocks)
 import Test.HUnit
 import Test.Hspec
@@ -332,7 +332,7 @@ quoteSpec = describe "Quote" $ do
     let input = ">> quote"
         expectation =
           Blocks
-            [PureBlock $ Quote $ QuoteCons 2 Nothing $ PureBlocks [Paragraph $ ParagraphCons $ [Word "quote"]]]
+            [PureBlock $ Quote $ QuoteCons 2 Nothing $ PureBlocks [Paragraph $ ParagraphCons [Word "quote"]]]
     result <- parseBlocks input
     expectation @=? result
 
@@ -354,7 +354,7 @@ quoteSpec = describe "Quote" $ do
 
   it "Nested quote" $ do
     let input = "> quote\n>> quote"
-        quoteContent = Paragraph $ ParagraphCons $ [Word "quote"]
+        quoteContent = Paragraph $ ParagraphCons [Word "quote"]
         expectation =
           Blocks
             [PureBlock $ Quote $ QuoteCons 1 Nothing $ PureBlocks [quoteContent, Quote $ QuoteCons 2 Nothing $ PureBlocks [quoteContent]]]
@@ -363,7 +363,7 @@ quoteSpec = describe "Quote" $ do
 
   it "Quote stops at quote with lower level" $ do
     let input = "> quote\n>> quote\n> quote"
-        quoteContent = Paragraph $ ParagraphCons $ [Word "quote"]
+        quoteContent = Paragraph $ ParagraphCons [Word "quote"]
         expectation =
           Blocks
             [ PureBlock $
