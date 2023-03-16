@@ -1,5 +1,6 @@
 module Neorg.Parser.Paragraph where
 
+import Control.Applicative (liftA2)
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
@@ -11,6 +12,8 @@ import Data.These
 import Neorg.Document
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
+import Neorg.Parser.Delimiter (delimiterBreak)
+import Neorg.Parser.Tag
 import Text.Megaparsec hiding (satisfy)
 
 type ParagraphParser a = StateT ParagraphState Parser a
@@ -34,7 +37,7 @@ paragraphWithEnd' :: ParagraphParser Bool -> ParagraphParser Paragraph
 paragraphWithEnd' end = do
   notFollowedBy $ lift detachedModifierStart
   result <- collect1 end' $ do
-    element <- 
+    element <-
       choice
         [ either Punctuation Word <$> escapeChar,
           uncurry Link <$> lift link,
@@ -51,7 +54,7 @@ paragraphWithEnd' end = do
   where
     end' :: ParagraphParser ([ParagraphElement] -> Maybe Paragraph)
     end' = do
-      isValid <-  end
+      isValid <- end
       if isValid
         then pure $ pure . ParagraphCons . removeTrailingWhitespace
         else pure $ const Nothing
@@ -83,7 +86,7 @@ styleModifier = try $ do
 verbatimModifier :: ParagraphParser (VerbatimType, Text)
 verbatimModifier = try $ do
   verbatimType <- verbatimStart
-  text <- lift $ verbatim (verbatimToChar verbatimType) verbatimEnd
+  text <- lift $ verbatim (verbatimToChar verbatimType) (verbatimEnd $ verbatimToChar verbatimType)
   pure (verbatimType, text)
   where
     verbatimStart :: ParagraphParser VerbatimType
@@ -106,22 +109,36 @@ link = try $ do
     linkLocation = try $ do
       char '{'
       notFollowedBy (void newline <|> eof)
-      url <- verbatim '}' (\c line -> guard (T.length (T.strip line) > 0) >> void (char c))
-      pure $ Url url
+      choice [CurrentFile <$> norgLocation, norgFile, urlLocation]
     linkLabel = try $ do
       char '['
       notFollowedBy (void newline <|> eof)
       paragraphWithEnd $ do
         atBeginning <- atBeginningOfLine
         (not atBeginning <$ char ']') <|> (False <$ paragraphBreak)
+    urlLocation = do
+      url <- verbatim '}' (\line -> guard (T.length (T.strip line) > 0) >> void (char '}'))
+      pure $ Url url
+    norgFile = do
+      char ':'
+      path <- linkVerbatim ':'
+      location <- Just <$> norgLocation <|> Nothing <$ char '}'
+      pure $ NorgFile path location
+    norgLocation = do
+      choice
+        [ LineNumberLocation <$> naturalNumber >-> char '}',
+          MagicLocation <$> (char '#' >> space >> linkVerbatim '}'),
+          uncurry HeadingLocation <$> liftA2 (,) (repeating '*' >-> space) (linkVerbatim '}')
+        ]
+    linkVerbatim c = verbatim c (\line -> guard (T.length (T.strip line) > 0) >> void (char c))
 
-verbatim :: Char -> (Char -> Text -> Parser ()) -> Parser Text
+verbatim :: Char -> (Text -> Parser ()) -> Parser Text
 verbatim endChar endParser = do
   line <- takeWhile1Chars (Just "verbatim") (\c -> c /= '\n' && c /= '\r' && c /= endChar)
   guard $ T.length line > 0
   choice
-    [ line <$ endParser endChar line,
-      paragraphBreak >> newline >> ((line <>) <$> verbatim endChar endParser)
+    [ line <$ endParser line,
+      newline >> notFollowedBy paragraphBreak >> ((line <>) <$> verbatim endChar endParser)
     ]
 
 attachedModifierStart :: Char -> ParagraphParser ()
@@ -171,7 +188,14 @@ punctuationCharacters :: S.Set Char
 punctuationCharacters = S.fromList "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 
 paragraphBreak :: Parser ()
-paragraphBreak = choice [eof, linesOfWhitespace >>= guard . (>= 2), atBeginningOfLine >>= guard >> detachedModifierStart]
+paragraphBreak =
+  choice
+    [ eof,
+      linesOfWhitespace >>= guard . (>= 2),
+      atBeginningOfLine >>= guard >> detachedModifierStart,
+      delimiterBreak,
+      tagBreak
+    ]
 
 paragraphSegmentBreak :: Parser ()
 paragraphSegmentBreak = choice [eof, linesOfWhitespace >>= guard . (>= 1)]

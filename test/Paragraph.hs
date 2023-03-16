@@ -193,6 +193,24 @@ paragraphSpec = describe "Paragraph" $ do
     result <- parseParagraph input
     expectation @=? result
 
+  it "Inline code with two newlines" $ do
+    let input = "`a\n\na`"
+        expectation = ParagraphCons [Punctuation '`', Word "a"]
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Inline code with heading next" $ do
+    let input = "`a\n* Heading`"
+        expectation = ParagraphCons [Punctuation '`', Word "a"]
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Multi-line inline code" $ do
+    let input = "`sd\ncode`"
+        expectation = ParagraphCons [VerbatimParagraph Code "sdcode"]
+    result <- parseParagraph input
+    expectation @=? result
+
   it "Zero length bold" $ do
     let input = "Zero **"
         expectation = ParagraphCons [Word "Zero", Space, Punctuation '*', Punctuation '*']
@@ -256,6 +274,48 @@ paragraphSpec = describe "Paragraph" $ do
   it "Link description with direct newline" $ do
     let input = "[\nlink]"
         expectation = ParagraphCons [Punctuation '[', Space, Word "link", Punctuation ']']
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Link with a norg file location" $ do
+    let input = "{:path:}"
+        expectation = ParagraphCons [Link (NorgFile "path" Nothing) Nothing]
+    result <- parseParagraph input
+    expectation @=? result
+  
+  it "Link with a norg file location and line number" $ do
+    let input = "{:path:123}"
+        expectation = ParagraphCons [Link (NorgFile "path" (Just $ LineNumberLocation 123)) Nothing]
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Link with a norg file location a heading" $ do
+    let input = "{:path:* heading}"
+        expectation = ParagraphCons [Link (NorgFile "path" (Just $ HeadingLocation 1 "heading")) Nothing]
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Link with a norg file location a magic location" $ do
+    let input = "{:path:# magic}"
+        expectation = ParagraphCons [Link (NorgFile "path" (Just $ MagicLocation "magic")) Nothing]
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Link with a magic location" $ do
+    let input = "{# magic}"
+        expectation = ParagraphCons [Link (CurrentFile (MagicLocation "magic")) Nothing]
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Link with line number" $ do
+    let input = "{123}"
+        expectation = ParagraphCons [Link (CurrentFile (LineNumberLocation 123)) Nothing]
+    result <- parseParagraph input
+    expectation @=? result
+
+  it "Link with line number" $ do
+    let input = "{*** heading}"
+        expectation = ParagraphCons [Link (CurrentFile (HeadingLocation 3 "heading")) Nothing]
     result <- parseParagraph input
     expectation @=? result
 

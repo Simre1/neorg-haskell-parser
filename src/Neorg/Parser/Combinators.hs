@@ -7,10 +7,11 @@ import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import Data.Sequence qualified as S
+import Data.Text (Text)
+import Data.Text qualified as T
 import Neorg.Parser.Base
 import Text.Megaparsec
 import Text.Megaparsec.Debug
-import Data.Text (Text)
 
 lexeme :: Parser a -> Parser a
 lexeme p = liftA2 const p emptyLines
@@ -46,6 +47,15 @@ detachedModifier c = lexemeSpaces $ try $ do
   modifiers <- many1 (char c)
   space
   pure $ length modifiers
+
+repeating :: Char -> Parser Int
+repeating c = try $ do
+  chars <- takeWhile1Chars (Just "Repeating") (== c)
+  pure $ T.length chars
+
+
+(>->) :: Applicative f => f a -> f b -> f a
+(>->) a b = const <$> a <*> b
 
 dbgThis :: (MonadParsecDbg e s p, Show a) => p a -> p a
 dbgThis = dbg "this" . label "this"

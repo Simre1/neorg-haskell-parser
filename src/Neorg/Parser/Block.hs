@@ -1,9 +1,15 @@
 module Neorg.Parser.Block where
 
+import Control.Applicative hiding (many)
 import Control.Monad
+import Data.Coerce (coerce)
+import Data.List
+import Data.Text (Text, pack)
 import Neorg.Document hiding (taskStatus)
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
+import Neorg.Parser.Delimiter
+import Neorg.Parser.Tag
 import Neorg.Parser.Paragraph (paragraph, paragraphSegment)
 import Text.Megaparsec
 
@@ -11,13 +17,21 @@ blocks :: Parser Blocks
 blocks = blocks' 0
 
 blocks' :: Int -> Parser Blocks
-blocks' envHeadingLevel = Blocks <$> many block
+blocks' envHeadingLevel = (Blocks <$> many block) >-> optional weakDelimiter
   where
-    block =
-      choice
-        [ Heading <$> heading envHeadingLevel,
-          PureBlock <$> pureBlock (PureBlockEnv 0 0)
-        ]
+    block = do
+      notFollowedBy $ weakDelimiter <|> strongDelimiter
+      blockInit
+      content <-
+        choice
+          [ Heading <$> heading envHeadingLevel,
+            PureBlock <$> pureBlock (PureBlockEnv 0 0),
+            HorizontalRule <$ horizontalRule
+          ]
+      optional $ do
+        guard (envHeadingLevel == 0)
+        weakDelimiter <|> strongDelimiter
+      pure content
 
 data PureBlockEnv = PureBlockEnv
   { listLevel :: Int,
@@ -25,13 +39,26 @@ data PureBlockEnv = PureBlockEnv
   }
 
 pureBlock :: PureBlockEnv -> Parser PureBlock
-pureBlock pureBlockEnv = choice [List <$> list pureBlockEnv, Quote <$> quote pureBlockEnv, Paragraph <$> paragraph]
+pureBlock pureBlockEnv = do
+  notFollowedBy pureBlockBreak
+  choice
+    [ List <$> list pureBlockEnv,
+      Quote <$> quote pureBlockEnv,
+      VerbatimRangedTag <$> verbatimRangedTag,
+      Paragraph <$> paragraph
+    ]
 
 pureBlocks :: PureBlockEnv -> Parser PureBlocks
 pureBlocks pureBlockEnv = PureBlocks <$> takeUntil pureBlockBreak (pureBlock pureBlockEnv)
 
 pureBlockBreak :: Parser ()
-pureBlockBreak = choice [eof, linesOfWhitespace >>= guard . (>= 2), atBeginningOfLine >>= guard >> impureDetachedModifierStart]
+pureBlockBreak =
+  choice
+    [ eof,
+      linesOfWhitespace >>= guard . (>= 2),
+      atBeginningOfLine >>= guard >> impureDetachedModifierStart,
+      delimiterBreak
+    ]
 
 impureDetachedModifierStart :: Parser ()
 impureDetachedModifierStart = lookAhead $ do
@@ -99,3 +126,5 @@ taskStatus = lexemeSpaces $ fmap join . optional $ try $ do
   pure $ charToTaskStatus c
   where
     taskChars = taskStatusChar <$> [minBound .. maxBound]
+
+

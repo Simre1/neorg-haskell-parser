@@ -2,21 +2,28 @@ module Block where
 
 import Data.Text
 import Neorg.Document
-import Neorg.Parser.Base (parseTextAnySource)
+import Neorg.Parser.Base (parseTextAnySource, emptyLines)
 import Neorg.Parser.Block (blocks)
 import Test.HUnit
 import Test.Hspec
 
 parseBlocks :: Text -> IO Blocks
-parseBlocks text = case parseTextAnySource blocks text of
+parseBlocks text = case parseTextAnySource (emptyLines >> blocks) text of
   Left error -> assertFailure (unpack error)
   Right a -> pure a
+
+parseBlocksShouldFail :: Text -> IO ()
+parseBlocksShouldFail text = case parseTextAnySource (emptyLines >> blocks) text of
+  Left error -> pure ()
+  Right a -> assertFailure ("Should have failed, but returned:\n" ++ show a)
 
 blockSpec :: Spec
 blockSpec = describe "Block" $ do
   headingSpec
   listSpec
   quoteSpec
+  delimiterSpec
+  tagSpec
 
 headingSpec :: Spec
 headingSpec = describe "Heading" $ do
@@ -370,5 +377,141 @@ quoteSpec = describe "Quote" $ do
                     PureBlocks
                       [quoteContent]
             ]
+    result <- parseBlocks input
+    expectation @=? result
+
+delimiterSpec :: Spec
+delimiterSpec = describe "Quote" $
+  do
+    it "Horizontal rule" $ do
+      let input = "Some text\n___"
+          expectation =
+            Blocks
+              [PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"], HorizontalRule]
+      result <- parseBlocks input
+      expectation @=? result
+
+    it "Weak delimiter" $ do
+      let input = "* heading\n** heading\n---\nSome text"
+          expectation =
+            Blocks
+              [ Heading $
+                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                    Blocks
+                      [ Heading $
+                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                            Blocks [],
+                        PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
+                      ]
+              ]
+      result <- parseBlocks input
+      expectation @=? result
+
+    it "Weak delimiter with no heading" $ do
+      let input = "Some text\n---"
+          expectation =
+            Blocks
+              [PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]]
+      result <- parseBlocks input
+      expectation @=? result
+
+    it "Strong delimiter" $ do
+      let input = "* heading\n** heading\n===\nSome text"
+          expectation =
+            Blocks
+              [ Heading $
+                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                    Blocks
+                      [ Heading $
+                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                            Blocks []
+                      ],
+                PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
+              ]
+
+      result <- parseBlocks input
+      expectation @=? result
+
+    it "Strong delimiter with chars at line end" $ do
+      let input = "* heading\n** heading\n=== Some text"
+          expectation =
+            Blocks
+              [ Heading $
+                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                    Blocks
+                      [ Heading $
+                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                            Blocks
+                              [ PureBlock $
+                                  Paragraph $
+                                    ParagraphCons
+                                      [ Punctuation '=',
+                                        Punctuation '=',
+                                        Punctuation '=',
+                                        Space,
+                                        Word "Some",
+                                        Space,
+                                        Word "text"
+                                      ]
+                              ]
+                      ]
+              ]
+
+      result <- parseBlocks input
+      expectation @=? result
+
+    it "Weak delimiter with chars at line end" $ do
+      let input = "* heading\n** heading\n--- Some text"
+          expectation =
+            Blocks
+              [ Heading $
+                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                    Blocks
+                      [ Heading $
+                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                            Blocks
+                              [ PureBlock $
+                                  List $
+                                    ListCons
+                                      3
+                                      UnorderedList
+                                      [ ( Nothing,
+                                          PureBlocks
+                                            [ Paragraph $
+                                                ParagraphCons
+                                                  [ Word "Some",
+                                                    Space,
+                                                    Word "text"
+                                                  ]
+                                            ]
+                                        )
+                                      ]
+                              ]
+                      ]
+              ]
+
+      result <- parseBlocks input
+      expectation @=? result
+
+tagSpec :: Spec
+tagSpec = describe "Heading" $ do
+  it "Verbatim ranged tag" $ do
+    let input = "@code\ntest\n@end"
+        expectation =
+          Blocks [PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test"]
+    result <- parseBlocks input
+    expectation @=? result
+
+  it "Verbatim ranged tag multiple lines" $ do
+    let input = "@code\ntest \n  test\n@end"
+        expectation =
+          Blocks [PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test \n  test"]
+    result <- parseBlocks input
+    expectation @=? result
+
+  it "Verbatim ranged tag with indentation" $ do
+    let input = "  @code\n  test\n  test\n  @end"
+        expectation =
+          Blocks [PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
     result <- parseBlocks input
     expectation @=? result

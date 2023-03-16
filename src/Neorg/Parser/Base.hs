@@ -4,8 +4,10 @@ import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import Data.Bifunctor
+import Data.Char (isNumber)
 import Data.Functor.Identity
 import Data.Text
+import Data.Text qualified as T
 import Text.Megaparsec
 import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char qualified as Mega
@@ -51,6 +53,17 @@ anyChar = do
   when (c > ' ') $ put $ ParserState 0 False
   pure c
 
+text :: Text -> Parser ()
+text t = do
+  Mega.string t
+  when (T.any (> ' ') t) $ put $ ParserState 0 False
+
+takeLine :: Parser Text
+takeLine = do
+  line <- Mega.takeWhileP (Just "line") (\c -> c /= '\n' && c /= '\r')
+  when (T.any (> ' ') line) $ put $ ParserState 0 False
+  pure line
+
 newline :: Parser ()
 newline = Mega.eol >> modify (\(ParserState lines beginning) -> ParserState (succ lines) True)
 
@@ -77,6 +90,9 @@ takeWhile1Chars label f = do
   put $ ParserState 0 False
   pure t
 
+naturalNumber :: Parser Int
+naturalNumber = read . unpack <$> takeWhile1Chars (Just "Number") isNumber
+
 linesOfWhitespace :: Parser Int
 linesOfWhitespace = do
   ParserState lines _ <- get
@@ -87,3 +103,5 @@ atBeginningOfLine = do
   ParserState _ beginning <- get
   pure beginning
 
+blockInit :: Parser ()
+blockInit = put $ ParserState 0 True

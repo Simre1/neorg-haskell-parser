@@ -3,7 +3,7 @@ module Neorg.Document where
 import Data.Text
 import Data.These
 
-data Document
+newtype Document = Document Blocks deriving (Show, Eq)
 
 newtype Paragraph = ParagraphCons [ParagraphElement] deriving (Show, Eq)
 
@@ -20,13 +20,24 @@ data ParagraphStyle = Bold | Italic | Underline | StrikeThrough | Superscript | 
 
 data VerbatimType = Code | Math deriving (Show, Eq, Enum, Bounded)
 
-newtype LinkLocation = Url Text deriving (Show, Eq)
+data LinkLocation
+  = Url Text
+  | NorgFile Text (Maybe NorgLocation)
+  | CurrentFile NorgLocation
+  deriving (Show, Eq)
+
+data NorgLocation
+  = HeadingLocation Int Text
+  | LineNumberLocation Int
+  | MagicLocation Text
+  deriving (Show, Eq)
 
 newtype Blocks = Blocks [Block] deriving (Show, Eq)
 
 data Block
   = PureBlock PureBlock
   | Heading Heading
+  | HorizontalRule
   deriving (Show, Eq)
 
 data Heading = HeadingCons
@@ -43,13 +54,15 @@ data PureBlock
   = List List
   | Quote Quote
   | Paragraph Paragraph
+  | VerbatimRangedTag VerbatimRangedTag
   deriving (Show, Eq)
 
-data Quote = QuoteCons {
-  level :: Int,
-  status :: Maybe TaskStatus,
-  content :: PureBlocks
-} deriving (Show, Eq)
+data Quote = QuoteCons
+  { level :: Int,
+    status :: Maybe TaskStatus,
+    content :: PureBlocks
+  }
+  deriving (Show, Eq)
 
 data List = ListCons
   { level :: Int,
@@ -59,6 +72,12 @@ data List = ListCons
   deriving (Show, Eq)
 
 data ListOrdering = OrderedList | UnorderedList deriving (Show, Eq)
+
+data VerbatimRangedTag = VerbatimRangedTagCons
+  { tag :: Text,
+    parameters :: [Text],
+    content :: Text
+  } deriving (Show, Eq)
 
 data TaskStatus = Undone | Done | Unclear | Urgent | Recurring | InProgress | OnHold | Cancelled deriving (Show, Eq, Enum, Bounded)
 

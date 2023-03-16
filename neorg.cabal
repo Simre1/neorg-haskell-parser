@@ -28,6 +28,8 @@ library
       Neorg.Parser.Base
       Neorg.Parser.Combinators
       Neorg.Parser.Block
+      Neorg.Parser.Delimiter
+      Neorg.Parser.Tag
       Neorg.Document
 
     -- Modules included in this library but not exported.
@@ -60,12 +62,18 @@ executable neorg
     build-depends:
         base ^>=4.16.4.0,
         neorg,
-        these,
-        text-builder
+        containers,
+        transformers,
+        bytestring,
+        text,
+        aeson,
+        pandoc-types
+
+
 
     hs-source-dirs:   app
     default-language: GHC2021
-    default-extensions: OverloadedStrings, LambdaCase
+    default-extensions: OverloadedStrings, LambdaCase, TupleSections
 
 test-suite neorg-test
     default-language: GHC2021
