@@ -57,7 +57,8 @@ pureBlockBreak =
     [ eof,
       linesOfWhitespace >>= guard . (>= 2),
       atBeginningOfLine >>= guard >> impureDetachedModifierStart,
-      delimiterBreak
+      delimiterBreak,
+      tagBreak
     ]
 
 impureDetachedModifierStart :: Parser ()
