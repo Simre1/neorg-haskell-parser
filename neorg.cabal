@@ -20,7 +20,7 @@ category:           Text
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  
+    exposed-modules:
       Neorg.Parser
       Neorg.Parser.Document
       Neorg.Parser.Error
@@ -37,9 +37,9 @@ library
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    
+    build-depends:
       base ^>=4.16.4.0,
-      megaparsec,
+      megaparsec ^>=9.3.0,
       containers,
       vector,
       transformers,
