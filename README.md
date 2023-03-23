@@ -24,11 +24,11 @@ I will focus on the first three layers for now. Layers 4 and 5 are on hold for n
 ## Pandoc Implementation State
 
 - [x] Layer 1: Paragraphs
-- [ ] Layer 2:
+- [x] Layer 2:
   - [x] Heading
   - [x] Lists
   - [x] Quotes
-  - [ ] More link locations (not sure how to do this with pandoc)
+  - [x] More link locations (not sure how to do this with pandoc)
   - [x] Verbatim Ranged tags
   - [x] Delimiting modifiers
 - [ ] Layer 3
