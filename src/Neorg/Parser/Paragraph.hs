@@ -8,7 +8,6 @@ import Data.Bool
 import Data.Set qualified as S
 import Data.Text hiding (dropWhile, init, last, reverse)
 import Data.Text qualified as T hiding (dropWhile, reverse)
-import Data.These
 import Neorg.Document
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
@@ -109,7 +108,7 @@ link = try $ do
     linkLocation = try $ do
       char '{'
       notFollowedBy (void newline <|> eof)
-      choice [CurrentFile <$> norgLocation, norgFile, urlLocation]
+      choice [CurrentFile <$> norgLocation, norgFile, externalFile, urlLocation]
     linkLabel = try $ do
       char '['
       notFollowedBy (void newline <|> eof)
@@ -117,20 +116,29 @@ link = try $ do
         atBeginning <- atBeginningOfLine
         (not atBeginning <$ char ']') <|> (False <$ paragraphBreak)
     urlLocation = do
-      url <- verbatim '}' (\line -> guard (T.length (T.strip line) > 0) >> void (char '}'))
+      url <- linkVerbatim '}'
       pure $ Url url
     norgFile = do
       char ':'
       path <- linkVerbatim ':'
       location <- Just <$> norgLocation <|> Nothing <$ char '}'
       pure $ NorgFile path location
+    externalFile = do
+      char '/' >> space
+      (path, lineNumber) <-
+        choice
+          [ (\a b -> (a, Just b)) <$> try (linkVerbatim ':') <*> naturalNumber >-> char '}',
+            (,Nothing) <$> linkVerbatim '}'
+          ]
+      pure $ ExternalFile path lineNumber
     norgLocation = do
       choice
         [ LineNumberLocation <$> naturalNumber >-> char '}',
-          MagicLocation <$> (char '#' >> space >> linkVerbatim '}'),
-          uncurry HeadingLocation <$> liftA2 (,) (repeating '*' >-> space) (linkVerbatim '}')
+          MagicLocation <$> (char '#' >> space >> linkParagraph),
+          uncurry HeadingLocation <$> liftA2 (,) (repeating '*' >-> space) linkParagraph
         ]
     linkVerbatim c = verbatim c (\line -> guard (T.length (T.strip line) > 0) >> void (char c))
+    linkParagraph = paragraphWithEnd $ True <$ char '}' <|> False <$ (linesOfWhitespace >>= guard . (>= 2)) <|> False <$ eof
 
 verbatim :: Char -> (Text -> Parser ()) -> Parser Text
 verbatim endChar endParser = do
