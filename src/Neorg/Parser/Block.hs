@@ -9,8 +9,8 @@ import Neorg.Document hiding (taskStatus)
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
 import Neorg.Parser.Delimiter
-import Neorg.Parser.Tag
 import Neorg.Parser.Paragraph (paragraph, paragraphSegment)
+import Neorg.Parser.Tag
 import Text.Megaparsec
 
 blocks :: Parser Blocks
@@ -22,6 +22,7 @@ blocks' envHeadingLevel = (Blocks <$> many block) >-> optional weakDelimiter
     block = do
       notFollowedBy $ weakDelimiter <|> strongDelimiter
       blockInit
+      lineNumber <- getLineNumber
       content <-
         choice
           [ Heading <$> heading envHeadingLevel,
@@ -31,7 +32,8 @@ blocks' envHeadingLevel = (Blocks <$> many block) >-> optional weakDelimiter
       optional $ do
         guard (envHeadingLevel == 0)
         weakDelimiter <|> strongDelimiter
-      pure content
+
+      pure $ Block  lineNumber content
 
 data PureBlockEnv = PureBlockEnv
   { listLevel :: Int,
@@ -126,5 +128,3 @@ taskStatus = lexemeSpaces $ fmap join . optional $ try $ do
   pure $ charToTaskStatus c
   where
     taskChars = taskStatusChar <$> [minBound .. maxBound]
-
-

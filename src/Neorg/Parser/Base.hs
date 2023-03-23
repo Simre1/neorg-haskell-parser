@@ -12,7 +12,12 @@ import Text.Megaparsec
 import Text.Megaparsec qualified as Mega
 import Text.Megaparsec.Char qualified as Mega
 
-data ParserState = ParserState Int Bool deriving (Eq, Show)
+data ParserState = ParserState
+  { whitespaceLines :: Int,
+    atBeginning :: Bool,
+    lineNumber :: Int
+  }
+  deriving (Eq, Show)
 
 type Parser = StateT ParserState (ParsecT Error Text Identity)
 
@@ -20,7 +25,7 @@ parseTextAnySource :: Show a => Parser a -> Text -> Either Text a
 parseTextAnySource = parseText "any source"
 
 parseText :: String -> Parser a -> Text -> Either Text a
-parseText sourceName p t = first (pack . errorBundlePretty) $ runParser (evalStateT p $ ParserState 0 True) sourceName t
+parseText sourceName p t = first (pack . errorBundlePretty) $ runParser (evalStateT p $ ParserState 0 True 1) sourceName t
 
 data Error = Error deriving (Eq, Show, Ord)
 
@@ -47,47 +52,50 @@ spaces = void $ takeWhileP (Just "Spaces") (\c -> c <= ' ' && (c /= '\n' && c /=
 spaces1 :: Parser ()
 spaces1 = void $ takeWhile1P (Just "1 space or more") (\c -> c <= ' ' && (c /= '\n' && c /= '\r'))
 
+putWithoutChangingLineNumber :: (Int -> ParserState) -> Parser ()
+putWithoutChangingLineNumber f = modify $ \(ParserState _ _ lineNumber) -> f lineNumber
+
 anyChar :: Parser Char
 anyChar = do
   c <- Mega.satisfy (const True)
-  when (c > ' ') $ put $ ParserState 0 False
+  when (c > ' ') $ putWithoutChangingLineNumber $ ParserState 0 False
   pure c
 
 text :: Text -> Parser ()
 text t = do
   Mega.string t
-  when (T.any (> ' ') t) $ put $ ParserState 0 False
+  when (T.any (> ' ') t) $ putWithoutChangingLineNumber $ ParserState 0 False
 
 takeLine :: Parser Text
 takeLine = do
   line <- Mega.takeWhileP (Just "line") (\c -> c /= '\n' && c /= '\r')
-  when (T.any (> ' ') line) $ put $ ParserState 0 False
+  when (T.any (> ' ') line) $  putWithoutChangingLineNumber$ ParserState 0 False
   pure line
 
 newline :: Parser ()
-newline = Mega.eol >> modify (\(ParserState lines beginning) -> ParserState (succ lines) True)
+newline = Mega.eol >> modify (\(ParserState whitespaceLines beginning lineNumber) -> ParserState (succ whitespaceLines) True (succ lineNumber))
 
 char :: Char -> Parser ()
 char c = do
   Mega.char c
-  when (c > ' ') $ put $ ParserState 0 False
+  when (c > ' ') $ putWithoutChangingLineNumber $ ParserState 0 False
 
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy f = do
   c <- Mega.satisfy f
-  when (c > ' ') $ put $ ParserState 0 False
+  when (c > ' ') $ putWithoutChangingLineNumber $ ParserState 0 False
   pure c
 
 takeWhileChars :: Maybe String -> (Char -> Bool) -> Parser Text
 takeWhileChars label f = do
   t <- Mega.takeWhile1P label f
-  put $ ParserState 0 False
+  putWithoutChangingLineNumber $ ParserState 0 False
   pure t
 
 takeWhile1Chars :: Maybe String -> (Char -> Bool) -> Parser Text
 takeWhile1Chars label f = do
   t <- Mega.takeWhile1P label f
-  put $ ParserState 0 False
+  putWithoutChangingLineNumber $ ParserState 0 False
   pure t
 
 naturalNumber :: Parser Int
@@ -95,13 +103,18 @@ naturalNumber = read . unpack <$> takeWhile1Chars (Just "Number") isNumber
 
 linesOfWhitespace :: Parser Int
 linesOfWhitespace = do
-  ParserState lines _ <- get
+  ParserState lines _ _ <- get
   pure lines
 
 atBeginningOfLine :: Parser Bool
 atBeginningOfLine = do
-  ParserState _ beginning <- get
+  ParserState _ beginning _ <- get
   pure beginning
 
+getLineNumber :: Parser Int
+getLineNumber = do
+  ParserState _ _ lineNumber <- get
+  pure lineNumber
+
 blockInit :: Parser ()
-blockInit = put $ ParserState 0 True
+blockInit = putWithoutChangingLineNumber $ ParserState 0 True

@@ -1,11 +1,12 @@
 module Neorg.Document where
 
 import Data.Text
-import Data.These
+import Data.Maybe (fromMaybe)
+import GHC.Generics (Generic)
 
-newtype Document = Document Blocks deriving (Show, Eq)
+newtype Document = Document Blocks deriving (Show, Eq, Generic)
 
-newtype Paragraph = ParagraphCons [ParagraphElement] deriving (Show, Eq)
+newtype Paragraph = ParagraphCons [ParagraphElement] deriving (Show, Eq, Generic, Ord)
 
 data ParagraphElement
   = Word Text
@@ -14,31 +15,38 @@ data ParagraphElement
   | StyledParagraph ParagraphStyle Paragraph
   | VerbatimParagraph VerbatimType Text
   | Link LinkLocation (Maybe Paragraph)
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, Ord)
 
-data ParagraphStyle = Bold | Italic | Underline | StrikeThrough | Superscript | Subscript | Spoiler deriving (Show, Eq, Enum, Bounded)
+data ParagraphStyle = Bold | Italic | Underline | StrikeThrough | Superscript | Subscript | Spoiler deriving (Show, Eq, Generic, Enum, Bounded, Ord)
 
-data VerbatimType = Code | Math deriving (Show, Eq, Enum, Bounded)
+data VerbatimType = Code | Math deriving (Show, Eq, Generic, Enum, Bounded, Ord)
 
 data LinkLocation
   = Url Text
   | NorgFile Text (Maybe NorgLocation)
   | CurrentFile NorgLocation
-  deriving (Show, Eq)
+  | ExternalFile Text (Maybe Int)
+  deriving (Show, Eq, Generic, Ord)
 
 data NorgLocation
-  = HeadingLocation Int Text
+  = HeadingLocation Int Paragraph
   | LineNumberLocation Int
-  | MagicLocation Text
-  deriving (Show, Eq)
+  | MagicLocation Paragraph
+  deriving (Show, Eq, Generic, Ord)
 
-newtype Blocks = Blocks [Block] deriving (Show, Eq)
+newtype Blocks = Blocks [Block] deriving (Show, Eq, Generic)
 
-data Block
+data Block = Block
+  { lineNumber :: Int,
+    content :: BlockContent
+  }
+  deriving (Show, Eq, Generic)
+
+data BlockContent
   = PureBlock PureBlock
   | Heading Heading
   | HorizontalRule
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 data Heading = HeadingCons
   { level :: Int,
@@ -46,40 +54,41 @@ data Heading = HeadingCons
     title :: Paragraph,
     content :: Blocks
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
-newtype PureBlocks = PureBlocks [PureBlock] deriving (Show, Eq)
+newtype PureBlocks = PureBlocks [PureBlock] deriving (Show, Eq, Generic)
 
 data PureBlock
   = List List
   | Quote Quote
   | Paragraph Paragraph
   | VerbatimRangedTag VerbatimRangedTag
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 data Quote = QuoteCons
   { level :: Int,
     status :: Maybe TaskStatus,
     content :: PureBlocks
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 data List = ListCons
   { level :: Int,
     ordering :: ListOrdering,
     items :: [(Maybe TaskStatus, PureBlocks)]
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
-data ListOrdering = OrderedList | UnorderedList deriving (Show, Eq)
+data ListOrdering = OrderedList | UnorderedList deriving (Show, Eq, Generic)
 
 data VerbatimRangedTag = VerbatimRangedTagCons
   { tag :: Text,
     parameters :: [Text],
     content :: Text
-  } deriving (Show, Eq)
+  }
+  deriving (Show, Eq, Generic)
 
-data TaskStatus = Undone | Done | Unclear | Urgent | Recurring | InProgress | OnHold | Cancelled deriving (Show, Eq, Enum, Bounded)
+data TaskStatus = Undone | Done | Unclear | Urgent | Recurring | InProgress | OnHold | Cancelled deriving (Show, Eq, Generic, Enum, Bounded)
 
 taskStatusChar :: TaskStatus -> Char
 taskStatusChar = \case
@@ -103,3 +112,22 @@ charToTaskStatus = \case
   '=' -> Just OnHold
   '_' -> Just Cancelled
   _ -> Nothing
+
+norgLocationDescription :: NorgLocation -> Paragraph
+norgLocationDescription (HeadingLocation _ t) = t
+norgLocationDescription (LineNumberLocation i) = ParagraphCons [Word $ pack (show i)]
+norgLocationDescription (MagicLocation t) = t
+
+rawParagraph :: Paragraph -> Text
+rawParagraph (ParagraphCons paraElements) = flip foldMap paraElements $ \case
+  Word t -> t
+  Punctuation char -> pack [char]
+  Space -> " "
+  StyledParagraph _ para -> rawParagraph para
+  VerbatimParagraph _ verbatimText -> verbatimText
+  Link linkLocation maybeDescription -> flip fromMaybe (rawParagraph <$> maybeDescription) $ case linkLocation of
+    CurrentFile norgLocation -> rawParagraph $ norgLocationDescription norgLocation
+    Url path -> path
+    NorgFile path norgLocation -> path <> maybe "" (rawParagraph . norgLocationDescription) norgLocation
+
+

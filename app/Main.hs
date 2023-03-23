@@ -1,11 +1,15 @@
 module Main where
 
 import Control.Monad
+import Control.Monad.Trans.Class (MonadTrans (lift))
+import Control.Monad.Trans.Reader
 import Control.Monad.Trans.State
 import Data.Aeson (encode)
 import Data.ByteString.Lazy qualified as B
+import Data.Foldable (minimumBy)
 import Data.Maybe
-import Data.Text (Text)
+import Data.Set qualified as S
+import Data.Text (Text, pack)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Neorg.Document
@@ -15,6 +19,7 @@ import Options.Applicative
 import System.Environment (getArgs)
 import System.IO (stderr)
 import Text.Pandoc.Builder qualified as P
+import Neorg.SemanticAnalysis
 
 data InputArgs = TransformFile String | TransformSTDIN
 
@@ -52,25 +57,14 @@ parseAndTransform inputArgs = do
       let parsedDocument = parseText name document content
       case parsedDocument of
         Left err -> logError err
-        Right doc -> runConvert (convertDocument doc) >>= B.putStr . encode
+        Right doc -> runConvert (extractDocumentInformation doc) (convertDocument doc) >>= B.putStr . encode
     Nothing -> logError $ T.pack "Supply zero arguments or exactly one norg file as an argument"
-
-logError :: Text -> IO ()
-logError = T.hPutStr stderr
-
-newtype Convert a = Convert (IO a) deriving (Functor, Applicative, Monad)
-
-warning :: Text -> Convert ()
-warning t = Convert $ logError t
-
-runConvert :: Convert a -> IO a
-runConvert (Convert io) = io
 
 convertDocument :: Document -> Convert P.Pandoc
 convertDocument (Document blocks) = P.doc <$> convertBlocks blocks
 
 convertBlock :: Block -> Convert P.Blocks
-convertBlock = \case
+convertBlock (Block _ blockContent) = case blockContent of
   Heading heading -> convertHeading heading
   PureBlock pb -> convertPureBlock pb
   HorizontalRule -> pure P.horizontalRule
@@ -103,7 +97,7 @@ convertHeading :: Heading -> Convert P.Blocks
 convertHeading (HeadingCons level status title content) = do
   titleText <- convertParagraph title
   taskStatus <- traverse convertTaskStatus status
-  let ref = T.intercalate "-" $ T.words $ T.toLower $ paragraphToText title
+  ref <- norgLocationLink (HeadingLocation level title)
   content <- convertBlocks content
   pure $ P.headerWith (ref, [], []) level (maybe titleText (<> titleText) taskStatus) <> content
 
@@ -154,25 +148,42 @@ convertParagraphElement = \case
       Url path -> pure $ P.link path "" $ description (P.text path)
       NorgFile path norgLocation -> do
         warning "Norg files cannot be properly linked"
-        pure $ P.link path "" $ description (maybe (P.text path) ((P.text path <>) . P.text . norgLocationDescription) norgLocation)
+        maybeNorgLocation <- traverse (convertParagraph . norgLocationDescription) norgLocation
+        pure $ P.link path "" $ description $ maybe (P.text path) (P.text path <>) maybeNorgLocation
+      ExternalFile path lineNumber -> do
+        when (isJust lineNumber) $ warning "Line numbers in external files cannot be properly linked"
+        pure $ P.link path "" $ description $ P.text path
       CurrentFile norgLocation -> do
-        pure $ P.link (norgLocationLink norgLocation) "" $ description $ P.text $ norgLocationDescription norgLocation
-  where
-    norgLocationLink (HeadingLocation _ t) = T.pack "#" <> T.intercalate "-" (T.words $ T.toLower t)
-    norgLocationLink _ = ""
+        loc <- norgLocationLink norgLocation
+        defaultDescription <- convertParagraph $ norgLocationDescription norgLocation
+        pure $ P.link loc "" $ description defaultDescription
 
-norgLocationDescription (HeadingLocation _ t) = t
-norgLocationDescription (LineNumberLocation i) = T.pack (show i)
-norgLocationDescription (MagicLocation t) = t
+norgLocationLink :: NorgLocation -> Convert Text
+norgLocationLink norgLocation = do
+  foundNorgLocation <- flip findNorgLocation norgLocation <$> documentInfo
+  case foundNorgLocation of
+    Nothing -> do
+      warning $ "Could not link to the location: " <> pack (show norgLocation)
+      pure ""
+    Just location -> case location of
+      HeadingLocation _ paragraph -> pure $ linkLocationFromParagraph paragraph
+      MagicLocation paragraph -> pure $ linkLocationFromParagraph paragraph
+      LineNumberLocation ln -> pure $ linkLocationFromLineNumber ln
+  where 
+    linkLocationFromParagraph p = T.pack "#" <> T.intercalate "-" (T.words $ T.toLower $ rawParagraph p)
+    linkLocationFromLineNumber ln = pack "#" <> "line-number-" <> pack (show ln)
 
-paragraphToText :: Paragraph -> Text
-paragraphToText (ParagraphCons paraElements) = flip foldMap paraElements $ \case
-  Word t -> t
-  Punctuation char -> T.pack [char]
-  Space -> " "
-  StyledParagraph _ para -> paragraphToText para
-  VerbatimParagraph _ verbatimText -> verbatimText
-  Link linkLocation maybeDescription -> flip fromMaybe (paragraphToText <$> maybeDescription) $ case linkLocation of
-    CurrentFile norgLocation -> norgLocationDescription norgLocation
-    Url path -> path
-    NorgFile path norgLocation -> path <> maybe "" norgLocationDescription norgLocation
+
+logError :: Text -> IO ()
+logError = T.hPutStrLn stderr
+
+newtype Convert a = Convert (ReaderT DocumentInformation IO a) deriving (Functor, Applicative, Monad)
+
+warning :: Text -> Convert ()
+warning t = Convert $ lift $ logError t
+
+documentInfo :: Convert DocumentInformation
+documentInfo = Convert ask
+
+runConvert :: DocumentInformation -> Convert a -> IO a
+runConvert di (Convert io) = runReaderT io di
