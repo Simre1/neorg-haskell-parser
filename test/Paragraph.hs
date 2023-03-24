@@ -2,23 +2,23 @@ module Paragraph where
 
 import Data.Text
 import Neorg.Document
-import Neorg.Parser.Base (parseTextAnySource)
 import Neorg.Parser.Paragraph (paragraph, paragraphSegment)
 import Test.HUnit
 import Test.Hspec
+import qualified Neorg.Parser as Parser
 
 parseParagraph :: Text -> IO Paragraph
-parseParagraph text = case parseTextAnySource paragraph text of
+parseParagraph text = case Parser.parseParagraph text of
   Left error -> assertFailure (unpack error)
   Right a -> pure a
 
 parseParagraphShouldFail :: Text -> IO ()
-parseParagraphShouldFail text = case parseTextAnySource paragraph text of
+parseParagraphShouldFail text = case Parser.parseParagraph text of
   Left error -> pure ()
   Right a -> assertFailure ("Should have failed, but returned:\n" ++ show a)
 
 parseParagraphSegment :: Text -> IO Paragraph
-parseParagraphSegment text = case parseTextAnySource paragraphSegment text of
+parseParagraphSegment text = case Parser.parseParagraphSegment text of
   Left error -> assertFailure (unpack error)
   Right a -> pure a
 

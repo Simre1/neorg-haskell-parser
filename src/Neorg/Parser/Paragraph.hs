@@ -4,10 +4,9 @@ import Control.Applicative (liftA2)
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
-import Data.Bool
 import Data.Set qualified as S
-import Data.Text hiding (dropWhile, init, last, reverse)
-import Data.Text qualified as T hiding (dropWhile, reverse)
+import Data.Text (Text, pack)
+import Data.Text qualified as T
 import Neorg.Document
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
@@ -46,7 +45,7 @@ paragraphWithEnd' end = do
           Punctuation <$> lift punctuation,
           Space <$ lift emptyLines1
         ]
-    modify (\state -> state {previousElement = element})
+    modify (\s -> s {previousElement = element})
     pure element
 
   maybe (fail "Not a valid paragraph") pure result
@@ -71,8 +70,8 @@ escapeChar = try $ do
 styleModifier :: ParagraphParser (ParagraphStyle, Paragraph)
 styleModifier = try $ do
   style <- styleStart
-  paragraph <- paragraphWithEnd' (True <$ styleEnd style <|> False <$ lift paragraphBreak)
-  pure (style, paragraph)
+  para <- paragraphWithEnd' (True <$ styleEnd style <|> False <$ lift paragraphBreak)
+  pure (style, para)
   where
     styleStart :: ParagraphParser ParagraphStyle
     styleStart = choice $ do
@@ -85,8 +84,8 @@ styleModifier = try $ do
 verbatimModifier :: ParagraphParser (VerbatimType, Text)
 verbatimModifier = try $ do
   verbatimType <- verbatimStart
-  text <- lift $ verbatim (verbatimToChar verbatimType) (verbatimEnd $ verbatimToChar verbatimType)
-  pure (verbatimType, text)
+  verbatimText <- lift $ verbatim (verbatimToChar verbatimType) (verbatimEnd $ verbatimToChar verbatimType)
+  pure (verbatimType, verbatimText)
   where
     verbatimStart :: ParagraphParser VerbatimType
     verbatimStart = choice $ do
@@ -102,14 +101,14 @@ verbatimModifier = try $ do
 link :: Parser (LinkLocation, Maybe Paragraph)
 link = try $ do
   location <- linkLocation
-  label <- optional linkLabel
-  pure (location, label)
+  description <- optional linkDescription
+  pure (location, description)
   where
     linkLocation = try $ do
       char '{'
       notFollowedBy (void newline <|> eof)
       choice [CurrentFile <$> norgLocation, norgFile, externalFile, urlLocation]
-    linkLabel = try $ do
+    linkDescription = try $ do
       char '['
       notFollowedBy (void newline <|> eof)
       paragraphWithEnd $ do

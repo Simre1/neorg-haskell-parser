@@ -3,11 +3,7 @@
 module Neorg.Parser.Combinators where
 
 import Control.Applicative
-import Control.Monad
-import Control.Monad.Trans.Class
-import Control.Monad.Trans.State
 import Data.Sequence qualified as S
-import Data.Text (Text)
 import Data.Text qualified as T
 import Neorg.Parser.Base
 import Text.Megaparsec
@@ -18,6 +14,17 @@ lexeme p = liftA2 const p emptyLines
 
 lexemeSpaces :: Parser a -> Parser a
 lexemeSpaces p = liftA2 const p spaces
+
+detachedModifier :: Char -> Parser Int
+detachedModifier c = lexemeSpaces $ try $ do
+  modifiers <- repeating c
+  space
+  pure modifiers
+
+repeating :: Char -> Parser Int
+repeating c = try $ do
+  chars <- takeWhile1Chars (Just "Repeating") (== c)
+  pure $ T.length chars
 
 many1 :: Alternative p => p a -> p [a]
 many1 p = (:) <$> p <*> Control.Applicative.many p
@@ -41,18 +48,6 @@ collect1 end p = p >>= go . S.singleton
 
 followedBy :: (MonadParsec e t p) => p a -> p a
 followedBy = lookAhead
-
-detachedModifier :: Char -> Parser Int
-detachedModifier c = lexemeSpaces $ try $ do
-  modifiers <- many1 (char c)
-  space
-  pure $ length modifiers
-
-repeating :: Char -> Parser Int
-repeating c = try $ do
-  chars <- takeWhile1Chars (Just "Repeating") (== c)
-  pure $ T.length chars
-
 
 (>->) :: Applicative f => f a -> f b -> f a
 (>->) a b = const <$> a <*> b

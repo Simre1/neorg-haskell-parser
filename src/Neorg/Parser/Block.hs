@@ -2,9 +2,6 @@ module Neorg.Parser.Block where
 
 import Control.Applicative hiding (many)
 import Control.Monad
-import Data.Coerce (coerce)
-import Data.List
-import Data.Text (Text, pack)
 import Neorg.Document hiding (taskStatus)
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
@@ -17,7 +14,7 @@ blocks :: Parser Blocks
 blocks = blocks' 0
 
 blocks' :: Int -> Parser Blocks
-blocks' envHeadingLevel = (Blocks <$> many block) >-> optional weakDelimiter
+blocks' envHeadingLevel = emptyLines >> (Blocks <$> many block) >-> optional weakDelimiter
   where
     block = do
       notFollowedBy $ weakDelimiter <|> strongDelimiter
@@ -26,91 +23,91 @@ blocks' envHeadingLevel = (Blocks <$> many block) >-> optional weakDelimiter
       content <-
         choice
           [ Heading <$> heading envHeadingLevel,
-            PureBlock <$> pureBlock (PureBlockEnv 0 0),
+            NestableBlock <$> nestableBlock (NestableBlockEnv 0 0),
             HorizontalRule <$ horizontalRule
           ]
-      optional $ do
+      void $ optional $ do
         guard (envHeadingLevel == 0)
         weakDelimiter <|> strongDelimiter
 
-      pure $ Block  lineNumber content
+      pure $ Block lineNumber content
 
-data PureBlockEnv = PureBlockEnv
+data NestableBlockEnv = NestableBlockEnv
   { listLevel :: Int,
     quoteLevel :: Int
   }
 
-pureBlock :: PureBlockEnv -> Parser PureBlock
-pureBlock pureBlockEnv = do
-  notFollowedBy pureBlockBreak
+nestableBlock :: NestableBlockEnv -> Parser NestableBlock
+nestableBlock nestableBlockEnv = do
+  notFollowedBy nestableBlockBreak
   choice
-    [ List <$> list pureBlockEnv,
-      Quote <$> quote pureBlockEnv,
+    [ List <$> list nestableBlockEnv,
+      Quote <$> quote nestableBlockEnv,
       VerbatimRangedTag <$> verbatimRangedTag,
       Paragraph <$> paragraph
     ]
 
-pureBlocks :: PureBlockEnv -> Parser PureBlocks
-pureBlocks pureBlockEnv = PureBlocks <$> takeUntil pureBlockBreak (pureBlock pureBlockEnv)
+nestableBlocks :: NestableBlockEnv -> Parser NestableBlocks
+nestableBlocks nestableBlockEnv = NestableBlocks <$> takeUntil nestableBlockBreak (nestableBlock nestableBlockEnv)
 
-pureBlockBreak :: Parser ()
-pureBlockBreak =
+nestableBlockBreak :: Parser ()
+nestableBlockBreak =
   choice
     [ eof,
       linesOfWhitespace >>= guard . (>= 2),
-      atBeginningOfLine >>= guard >> impureDetachedModifierStart,
+      atBeginningOfLine >>= guard >> topLevelDetachedModifierStart,
       delimiterBreak
     ]
 
-impureDetachedModifierStart :: Parser ()
-impureDetachedModifierStart = lookAhead $ do
-  choice $ flip fmap impureDetachedModifierSymbols $ void . detachedModifier
+topLevelDetachedModifierStart :: Parser ()
+topLevelDetachedModifierStart = lookAhead $ do
+  choice $ flip fmap topLevelDetachedModifierSymbols $ void . detachedModifier
 
-impureDetachedModifierSymbols :: String
-impureDetachedModifierSymbols = "*"
+topLevelDetachedModifierSymbols :: String
+topLevelDetachedModifierSymbols = "*"
 
-quote :: PureBlockEnv -> Parser Quote
-quote pureBlockEnv = do
-  notFollowedBy pureBlockBreak
+quote :: NestableBlockEnv -> Parser Quote
+quote nestableBlockEnv = do
+  notFollowedBy nestableBlockBreak
   level <- try $ do
     level <- quotePrefix
-    guard $ level > quoteLevel pureBlockEnv
+    guard $ level > quoteLevel nestableBlockEnv
     pure level
   status <- taskStatus
-  content <- pureBlocks (pureBlockEnv {quoteLevel = level})
+  content <- nestableBlocks (nestableBlockEnv {quoteLevel = level})
   pure $ QuoteCons level status content
   where
     quotePrefix = try $ do
       level <- detachedModifier '>'
-      guard $ level > quoteLevel pureBlockEnv
+      guard $ level > quoteLevel nestableBlockEnv
       pure level
 
-list :: PureBlockEnv -> Parser List
-list pureBlockEnv = do
+list :: NestableBlockEnv -> Parser List
+list nestableBlockEnv = do
   (level, ordering) <- lookAhead listPrefix
   items <- many (listItem level ordering)
   pure $ ListCons level ordering items
   where
     listItem envLevel envOrdering = do
-      notFollowedBy pureBlockBreak
-      (level, ordering) <- try $ do
+      notFollowedBy nestableBlockBreak
+      level <- try $ do
         (level, ordering) <- listPrefix
         guard $ ordering == envOrdering
         guard $ level == envLevel
-        pure (level, ordering)
+        pure level
       status <- taskStatus
-      itemContent <- pureBlocks (pureBlockEnv {listLevel = level})
+      itemContent <- nestableBlocks (nestableBlockEnv {listLevel = level})
       pure (status, itemContent)
     listPrefix = try $ do
       prefix@(level, _) <- choice [(,UnorderedList) <$> detachedModifier '-', (,OrderedList) <$> detachedModifier '~']
-      guard $ level > listLevel pureBlockEnv
+      guard $ level > listLevel nestableBlockEnv
       pure prefix
 
 heading :: Int -> Parser Heading
 heading envHeadingLevel = lexeme $ do
   (level, status, title) <- headingLine
-  blocks <- blocks' level
-  pure $ HeadingCons level status title blocks
+  headingBlocks <- blocks' level
+  pure $ HeadingCons level status title headingBlocks
   where
     headingLine = lexemeSpaces $ try $ do
       level <- detachedModifier '*'
@@ -126,5 +123,3 @@ taskStatus = lexemeSpaces $ fmap join . optional $ try $ do
   char ')'
   space
   pure $ charToTaskStatus c
-  where
-    taskChars = taskStatusChar <$> [minBound .. maxBound]

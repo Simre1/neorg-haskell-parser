@@ -34,11 +34,11 @@ extractDocumentInformation (Document (Blocks blocks)) = execState (traverse_ ext
 findNorgLocation :: DocumentInformation -> NorgLocation -> Maybe NorgLocation
 findNorgLocation di nl = case nl of
   LineNumberLocation x ->
-    if S.size lines > 0
-      then Just $ LineNumberLocation $ minimumBy (\a b -> abs (b - x) `compare` abs (a - x)) lines
+    if S.size lineNumbers > 0
+      then Just $ LineNumberLocation $ minimumBy (\a b -> abs (b - x) `compare` abs (a - x)) lineNumbers
       else Nothing
   HeadingLocation level location -> HeadingLocation level <$> M.lookup (rawParagraph location) rawTextHeadings
   MagicLocation location -> MagicLocation <$> M.lookup (rawParagraph location) rawTextHeadings
   where
-    (LinkReferences lines headings ) = linkReferences di
+    (LinkReferences lineNumbers headings ) = linkReferences di
     rawTextHeadings = M.fromList $ (\x -> (rawParagraph x, x)) <$> S.toList headings

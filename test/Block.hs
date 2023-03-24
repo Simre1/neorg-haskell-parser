@@ -2,18 +2,19 @@ module Block where
 
 import Data.Text
 import Neorg.Document
-import Neorg.Parser.Base (emptyLines, parseTextAnySource)
+import Neorg.Parser.Base (emptyLines)
 import Neorg.Parser.Block (blocks)
 import Test.HUnit
 import Test.Hspec
+import qualified Neorg.Parser as Parser
 
 parseBlocks :: Text -> IO Blocks
-parseBlocks text = case parseTextAnySource (emptyLines >> blocks) text of
+parseBlocks text = case Parser.parseBlocks text of
   Left error -> assertFailure (unpack error)
   Right a -> pure a
 
 parseBlocksShouldFail :: Text -> IO ()
-parseBlocksShouldFail text = case parseTextAnySource (emptyLines >> blocks) text of
+parseBlocksShouldFail text = case Parser.parseBlocks text of
   Left error -> pure ()
   Right a -> assertFailure ("Should have failed, but returned:\n" ++ show a)
 
@@ -29,7 +30,7 @@ headingSpec :: Spec
 headingSpec = describe "Heading" $ do
   it "Heading and content" $ do
     let input = "* Heading\nBody"
-        expectation = Blocks [Block 1 $ Heading $ HeadingCons 1 Nothing (ParagraphCons [Word "Heading"]) (Blocks [Block 2 $ PureBlock $ Paragraph $ ParagraphCons [Word "Body"]])]
+        expectation = Blocks [Block 1 $ Heading $ HeadingCons 1 Nothing (ParagraphCons [Word "Heading"]) (Blocks [Block 2 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Body"]])]
     result <- parseBlocks input
     expectation @=? result
 
@@ -68,7 +69,7 @@ headingSpec = describe "Heading" $ do
                     Nothing
                     (ParagraphCons [Word "Heading"])
                     ( Blocks
-                        [ Block 2 $ PureBlock $ Paragraph (ParagraphCons [Word "Some", Space, Word "content"]),
+                        [ Block 2 $ NestableBlock $ Paragraph (ParagraphCons [Word "Some", Space, Word "content"]),
                           Block 4 $
                             Heading $
                               HeadingCons
@@ -86,7 +87,7 @@ headingSpec = describe "Heading" $ do
     let input = "Paragraph\n* Heading"
         expectation =
           Blocks
-            [ Block 1 $ PureBlock $ Paragraph $ ParagraphCons [Word "Paragraph"],
+            [ Block 1 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Paragraph"],
               Block 2 $ Heading $ HeadingCons 1 Nothing (ParagraphCons [Word "Heading"]) (Blocks [])
             ]
     result <- parseBlocks input
@@ -116,19 +117,19 @@ headingSpec = describe "Heading" $ do
 
   it "Heading with task status" $ do
     let input = "* (x) Heading\nBody"
-        expectation = Blocks [Block 1 $ Heading $ HeadingCons 1 (Just Done) (ParagraphCons [Word "Heading"]) (Blocks [Block 2 $ PureBlock $ Paragraph $ ParagraphCons [Word "Body"]])]
+        expectation = Blocks [Block 1 $ Heading $ HeadingCons 1 (Just Done) (ParagraphCons [Word "Heading"]) (Blocks [Block 2 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Body"]])]
     result <- parseBlocks input
     expectation @=? result
 
   it "Heading char not the first one in line" $ do
     let input = "a * Heading"
-        expectation = Blocks [Block 1 $ PureBlock $ Paragraph $ ParagraphCons [Word "a", Space, Punctuation '*', Space, Word "Heading"]]
+        expectation = Blocks [Block 1 $ NestableBlock $ Paragraph $ ParagraphCons [Word "a", Space, Punctuation '*', Space, Word "Heading"]]
     result <- parseBlocks input
     expectation @=? result
 
   it "Heading with no space" $ do
     let input = "*Heading"
-        expectation = Blocks [Block 1 $ PureBlock $ Paragraph $ ParagraphCons [Punctuation '*', Word "Heading"]]
+        expectation = Blocks [Block 1 $ NestableBlock $ Paragraph $ ParagraphCons [Punctuation '*', Word "Heading"]]
     result <- parseBlocks input
     expectation @=? result
 
@@ -139,13 +140,13 @@ listSpec = describe "List" $ do
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
                       UnorderedList
                       [ ( Nothing,
-                          PureBlocks
+                          NestableBlocks
                             [Paragraph $ ParagraphCons [Word "list"]]
                         )
                       ]
@@ -155,11 +156,11 @@ listSpec = describe "List" $ do
 
   it "Multiple list items" $ do
     let input = "- list\n- list\n- list"
-        item = (Nothing, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])
+        item = (Nothing, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
@@ -171,17 +172,17 @@ listSpec = describe "List" $ do
 
   it "Nested list items" $ do
     let input = "- list\n-- list\n-- list"
-        item = (Nothing, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])
+        item = (Nothing, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
                       UnorderedList
                       [ ( Nothing,
-                          PureBlocks
+                          NestableBlocks
                             [ Paragraph $
                                 ParagraphCons
                                   [Word "list"],
@@ -195,17 +196,17 @@ listSpec = describe "List" $ do
 
   it "Sub list items" $ do
     let input = "- list\n-- list\n- list"
-        item = (Nothing, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])
+        item = (Nothing, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
                       UnorderedList
                       [ ( Nothing,
-                          PureBlocks
+                          NestableBlocks
                             [ Paragraph $
                                 ParagraphCons
                                   [Word "list"],
@@ -220,11 +221,11 @@ listSpec = describe "List" $ do
 
   it "Ordered list items" $ do
     let input = "~~ list\n~~ list"
-        item = (Nothing, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])
+        item = (Nothing, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       2
@@ -236,11 +237,11 @@ listSpec = describe "List" $ do
 
   it "List items with tasks" $ do
     let input = "- ( ) list\n- (x) list\n- (+) list"
-        item task = (Just task, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])
+        item task = (Just task, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
@@ -255,7 +256,7 @@ listSpec = describe "List" $ do
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   Paragraph $
                     ParagraphCons [Word "x", Space, Punctuation '-', Space, Word "no", Space, Word "list"]
             ]
@@ -267,7 +268,7 @@ listSpec = describe "List" $ do
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   Paragraph $
                     ParagraphCons [Punctuation '-', Word "no", Space, Word "list"]
             ]
@@ -276,18 +277,18 @@ listSpec = describe "List" $ do
 
   it "Lower-level list afterwards" $ do
     let input = "-- list\n- list"
-        item = (Nothing, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])
+        item = (Nothing, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       2
                       UnorderedList
                       [item],
               Block 2 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
@@ -302,13 +303,13 @@ listSpec = describe "List" $ do
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
                       UnorderedList
-                      [(Nothing, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])],
-              Block 3 $ PureBlock $ Paragraph $ ParagraphCons [Word "Paragraph"]
+                      [(Nothing, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])],
+              Block 3 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Paragraph"]
             ]
     result <- parseBlocks input
     expectation @=? result
@@ -318,17 +319,17 @@ listSpec = describe "List" $ do
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   List $
                     ListCons
                       1
                       UnorderedList
                       [ ( Nothing,
-                          PureBlocks
+                          NestableBlocks
                             [ Paragraph $
                                 ParagraphCons
                                   [Word "list", Punctuation ':', Space, Word "some", Space, Word "text"],
-                              List $ ListCons 2 UnorderedList [(Nothing, PureBlocks [Paragraph $ ParagraphCons [Word "list"]])]
+                              List $ ListCons 2 UnorderedList [(Nothing, NestableBlocks [Paragraph $ ParagraphCons [Word "list"]])]
                             ]
                         )
                       ]
@@ -342,7 +343,7 @@ quoteSpec = describe "Quote" $ do
     let input = "> quote"
         expectation =
           Blocks
-            [Block 1 $ PureBlock $ Quote $ QuoteCons 1 Nothing $ PureBlocks [Paragraph $ ParagraphCons [Word "quote"]]]
+            [Block 1 $ NestableBlock $ Quote $ QuoteCons 1 Nothing $ NestableBlocks [Paragraph $ ParagraphCons [Word "quote"]]]
     result <- parseBlocks input
     expectation @=? result
 
@@ -350,7 +351,7 @@ quoteSpec = describe "Quote" $ do
     let input = ">> quote"
         expectation =
           Blocks
-            [Block 1 $ PureBlock $ Quote $ QuoteCons 2 Nothing $ PureBlocks [Paragraph $ ParagraphCons [Word "quote"]]]
+            [Block 1 $ NestableBlock $ Quote $ QuoteCons 2 Nothing $ NestableBlocks [Paragraph $ ParagraphCons [Word "quote"]]]
     result <- parseBlocks input
     expectation @=? result
 
@@ -358,7 +359,7 @@ quoteSpec = describe "Quote" $ do
     let input = ">quote"
         expectation =
           Blocks
-            [Block 1 $ PureBlock $ Paragraph $ ParagraphCons [Punctuation '>', Word "quote"]]
+            [Block 1 $ NestableBlock $ Paragraph $ ParagraphCons [Punctuation '>', Word "quote"]]
     result <- parseBlocks input
     expectation @=? result
 
@@ -366,7 +367,7 @@ quoteSpec = describe "Quote" $ do
     let input = "x > quote"
         expectation =
           Blocks
-            [Block 1 $ PureBlock $ Paragraph $ ParagraphCons [Word "x", Space, Punctuation '>', Space, Word "quote"]]
+            [Block 1 $ NestableBlock $ Paragraph $ ParagraphCons [Word "x", Space, Punctuation '>', Space, Word "quote"]]
     result <- parseBlocks input
     expectation @=? result
 
@@ -375,7 +376,7 @@ quoteSpec = describe "Quote" $ do
         quoteContent = Paragraph $ ParagraphCons [Word "quote"]
         expectation =
           Blocks
-            [Block 1 $ PureBlock $ Quote $ QuoteCons 1 Nothing $ PureBlocks [quoteContent, Quote $ QuoteCons 2 Nothing $ PureBlocks [quoteContent]]]
+            [Block 1 $ NestableBlock $ Quote $ QuoteCons 1 Nothing $ NestableBlocks [quoteContent, Quote $ QuoteCons 2 Nothing $ NestableBlocks [quoteContent]]]
     result <- parseBlocks input
     expectation @=? result
 
@@ -385,16 +386,16 @@ quoteSpec = describe "Quote" $ do
         expectation =
           Blocks
             [ Block 1 $
-                PureBlock $
+                NestableBlock $
                   Quote $
                     QuoteCons 1 Nothing $
-                      PureBlocks
-                        [quoteContent, Quote $ QuoteCons 2 Nothing $ PureBlocks [quoteContent]],
+                      NestableBlocks
+                        [quoteContent, Quote $ QuoteCons 2 Nothing $ NestableBlocks [quoteContent]],
               Block 3 $
-                PureBlock $
+                NestableBlock $
                   Quote $
                     QuoteCons 1 Nothing $
-                      PureBlocks
+                      NestableBlocks
                         [quoteContent]
             ]
     result <- parseBlocks input
@@ -407,7 +408,7 @@ delimiterSpec = describe "Quote" $
       let input = "Some text\n___"
           expectation =
             Blocks
-              [Block 1 $ PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"], Block 2 HorizontalRule]
+              [Block 1 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"], Block 2 HorizontalRule]
       result <- parseBlocks input
       expectation @=? result
 
@@ -421,7 +422,7 @@ delimiterSpec = describe "Quote" $
                       [ Block 2 $ Heading $
                           HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
                             Blocks [],
-                        Block 4 $ PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
+                        Block 4 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
                       ]
               ]
       result <- parseBlocks input
@@ -431,7 +432,7 @@ delimiterSpec = describe "Quote" $
       let input = "Some text\n---"
           expectation =
             Blocks
-              [Block 1 $ PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]]
+              [Block 1 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]]
       result <- parseBlocks input
       expectation @=? result
 
@@ -446,7 +447,7 @@ delimiterSpec = describe "Quote" $
                           HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
                             Blocks []
                       ],
-                Block 4 $ PureBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
+                Block 4 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
               ]
 
       result <- parseBlocks input
@@ -462,7 +463,7 @@ delimiterSpec = describe "Quote" $
                       [ Block 2 $ Heading $
                           HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
                             Blocks
-                              [ Block 3 $ PureBlock $
+                              [ Block 3 $ NestableBlock $
                                   Paragraph $
                                     ParagraphCons
                                       [ Punctuation '=',
@@ -490,13 +491,13 @@ delimiterSpec = describe "Quote" $
                       [ Block 2 $ Heading $
                           HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
                             Blocks
-                              [ Block 3 $ PureBlock $
+                              [ Block 3 $ NestableBlock $
                                   List $
                                     ListCons
                                       3
                                       UnorderedList
                                       [ ( Nothing,
-                                          PureBlocks
+                                          NestableBlocks
                                             [ Paragraph $
                                                 ParagraphCons
                                                   [ Word "Some",
@@ -518,21 +519,21 @@ tagSpec = describe "Heading" $ do
   it "Verbatim ranged tag" $ do
     let input = "@code\ntest\n@end"
         expectation =
-          Blocks [Block 1 $ PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test"]
     result <- parseBlocks input
     expectation @=? result
 
   it "Verbatim ranged tag multiple lines" $ do
     let input = "@code\ntest \n  test\n@end"
         expectation =
-          Blocks [Block 1 $ PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test \n  test"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test \n  test"]
     result <- parseBlocks input
     expectation @=? result
 
   it "Verbatim ranged tag with indentation" $ do
     let input = "  @code\n  test\n  test\n  @end"
         expectation =
-          Blocks [Block 1 $ PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
     result <- parseBlocks input
     expectation @=? result
 
@@ -547,6 +548,6 @@ tagSpec = describe "Heading" $ do
   it "Verbatim ranged tag with empty lines" $ do
     let input = "  @code\n \n  test\n  test\n  @end"
         expectation =
-          Blocks [Block 1 $ PureBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
     result <- parseBlocks input
     expectation @=? result

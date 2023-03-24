@@ -13,8 +13,7 @@ tagBreak :: Parser ()
 tagBreak = try $ lookAhead $ do
   atBeginningOfLine >>= guard
   char '@'
-  tagName
-  pure ()
+  void tagName
 
 verbatimRangedTag :: Parser VerbatimRangedTag
 verbatimRangedTag = do
