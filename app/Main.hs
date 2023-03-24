@@ -13,13 +13,12 @@ import Data.Text (Text, pack)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Neorg.Document
-import Neorg.Parser.Base
-import Neorg.Parser.Document (document)
 import Options.Applicative
 import System.Environment (getArgs)
 import System.IO (stderr)
 import Text.Pandoc.Builder qualified as P
 import Neorg.SemanticAnalysis
+import Neorg.Parser (parseDocument)
 
 data InputArgs = TransformFile String | TransformSTDIN
 
@@ -54,7 +53,7 @@ parseAndTransform inputArgs = do
 
   case input of
     Just (content, name) -> do
-      let parsedDocument = parseText name document content
+      let parsedDocument = parseDocument name content
       case parsedDocument of
         Left err -> logError err
         Right doc -> runConvert (extractDocumentInformation doc) (convertDocument doc) >>= B.putStr . encode
@@ -66,20 +65,20 @@ convertDocument (Document blocks) = P.doc <$> convertBlocks blocks
 convertBlock :: Block -> Convert P.Blocks
 convertBlock (Block _ blockContent) = case blockContent of
   Heading heading -> convertHeading heading
-  PureBlock pb -> convertPureBlock pb
+  NestableBlock pb -> convertNestableBlock pb
   HorizontalRule -> pure P.horizontalRule
 
 convertBlocks :: Blocks -> Convert P.Blocks
 convertBlocks (Blocks blocks) = mconcat <$> traverse convertBlock blocks
 
-convertPureBlock :: PureBlock -> Convert P.Blocks
-convertPureBlock = \case
+convertNestableBlock :: NestableBlock -> Convert P.Blocks
+convertNestableBlock = \case
   Paragraph i -> P.para <$> convertParagraph i
   Quote quote -> convertQuote quote
   List list -> convertList list
 
-convertPureBlocks :: PureBlocks -> Convert P.Blocks
-convertPureBlocks (PureBlocks blocks) = mconcat <$> traverse convertPureBlock blocks
+convertNestableBlocks :: NestableBlocks -> Convert P.Blocks
+convertNestableBlocks (NestableBlocks blocks) = mconcat <$> traverse convertNestableBlock blocks
 
 convertList :: List -> Convert P.Blocks
 convertList (ListCons level ordering items) = do
@@ -87,7 +86,7 @@ convertList (ListCons level ordering items) = do
   where
     makeItem (maybeTaskStatus, item) = do
       taskStatus <- traverse convertTaskStatus maybeTaskStatus
-      blocks <- convertPureBlocks item
+      blocks <- convertNestableBlocks item
       pure $ maybe mempty P.plain taskStatus <> blocks
     makeList = case ordering of
       OrderedList -> P.orderedList
@@ -104,7 +103,7 @@ convertHeading (HeadingCons level status title content) = do
 convertQuote :: Quote -> Convert P.Blocks
 convertQuote (QuoteCons level status content) = do
   taskStatus <- traverse convertTaskStatus status
-  blocks <- convertPureBlocks content
+  blocks <- convertNestableBlocks content
   pure $ P.blockQuote $ maybe mempty P.plain taskStatus <> blocks
 
 convertTaskStatus :: TaskStatus -> Convert P.Inlines

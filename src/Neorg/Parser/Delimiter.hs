@@ -1,9 +1,9 @@
 module Neorg.Parser.Delimiter where
 
-import Neorg.Parser.Base
 import Control.Monad
-import Text.Megaparsec
+import Neorg.Parser.Base
 import Neorg.Parser.Combinators
+import Text.Megaparsec
 
 delimitingModifier :: Char -> Parser ()
 delimitingModifier c = lexeme $ try $ do
@@ -12,7 +12,6 @@ delimitingModifier c = lexeme $ try $ do
   guard $ times >= 3
   spaces
   followedBy (newline <|> eof)
-
 
 delimiterBreak :: Parser ()
 delimiterBreak = followedBy $ weakDelimiter <|> strongDelimiter <|> horizontalRule

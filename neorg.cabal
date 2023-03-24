@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               neorg
-version:            0.1.0.0
+version:            0.2.0.0
 synopsis: Transform norg documents into PDFs with pandoc 
 description: This package includes a parser for norg files as well as an AST for norg. In addition, the included executable can transform this AST into the pandoc AST. Norg files can be transformed to pandoc json which can then be transformed into the various formats that pandoc supports.
 homepage: https://github.com/Simre1/neorg-haskell-parser
@@ -13,11 +13,27 @@ copyright:          Simon Reitinger
 category:           Text
 extra-source-files: CHANGELOG.md
 
+common common
+  ghc-options: -Wall
+  default-language: GHC2021
+  default-extensions: 
+    OverloadedStrings,
+    LambdaCase,
+    DuplicateRecordFields,
+    OverloadedLabels,
+    TupleSections
+  build-depends:
+    base ^>=4.16.4.0,
+    containers ^>=0.6,
+    transformers ^>= 0.6.1,
+    text ^>= 2.0,
+    optics-core ^>= 0.4
+
 library
+    import: common
     exposed-modules:
       Neorg.Parser
       Neorg.Parser.Document
-      Neorg.Parser.Error
       Neorg.Parser.Paragraph
       Neorg.Parser.Base
       Neorg.Parser.Combinators
@@ -27,42 +43,30 @@ library
       Neorg.Document
       Neorg.SemanticAnalysis
     build-depends:
-      base ^>=4.16.4.0,
       megaparsec ^>=9.3.0,
-      containers,
-      vector,
-      transformers,
-      text,
-      bytestring,
-      parser-combinators,
-      optics-core
     hs-source-dirs:   src
-    default-language: GHC2021
-    default-extensions: OverloadedStrings, LambdaCase, DuplicateRecordFields, OverloadedLabels
 
 executable neorg-pandoc
+    import: common
     main-is:          Main.hs
     build-depends:
-        base ^>=4.16.4.0,
         neorg,
-        containers,
-        transformers,
-        bytestring,
-        text,
-        aeson,
-        pandoc-types,
-        optparse-applicative
+        bytestring ^>= 0.11.4,
+        aeson ^>= 2.1.2,
+        pandoc-types ^>= 1.23,
+        optparse-applicative ^>= 0.17
     hs-source-dirs:   app
-    default-language: GHC2021
-    default-extensions: OverloadedStrings, LambdaCase, TupleSections
 
 test-suite neorg-test
-    default-language: GHC2021
+    import: common
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Main.hs
     other-modules:
       Paragraph
       Block
-    build-depends:    base ^>=4.16.4.0, neorg, hspec, HUnit, text, these
-    default-extensions: OverloadedStrings, LambdaCase
+    build-depends:    
+      base ^>=4.16.4.0,
+      neorg,
+      hspec ^>= 2.10,
+      HUnit ^>= 1.6

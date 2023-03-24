@@ -43,7 +43,7 @@ data Block = Block
   deriving (Show, Eq, Generic)
 
 data BlockContent
-  = PureBlock PureBlock
+  = NestableBlock NestableBlock
   | Heading Heading
   | HorizontalRule
   deriving (Show, Eq, Generic)
@@ -56,9 +56,9 @@ data Heading = HeadingCons
   }
   deriving (Show, Eq, Generic)
 
-newtype PureBlocks = PureBlocks [PureBlock] deriving (Show, Eq, Generic)
+newtype NestableBlocks = NestableBlocks [NestableBlock] deriving (Show, Eq, Generic)
 
-data PureBlock
+data NestableBlock
   = List List
   | Quote Quote
   | Paragraph Paragraph
@@ -68,14 +68,14 @@ data PureBlock
 data Quote = QuoteCons
   { level :: Int,
     status :: Maybe TaskStatus,
-    content :: PureBlocks
+    content :: NestableBlocks
   }
   deriving (Show, Eq, Generic)
 
 data List = ListCons
   { level :: Int,
     ordering :: ListOrdering,
-    items :: [(Maybe TaskStatus, PureBlocks)]
+    items :: [(Maybe TaskStatus, NestableBlocks)]
   }
   deriving (Show, Eq, Generic)
 
@@ -129,5 +129,6 @@ rawParagraph (ParagraphCons paraElements) = flip foldMap paraElements $ \case
     CurrentFile norgLocation -> rawParagraph $ norgLocationDescription norgLocation
     Url path -> path
     NorgFile path norgLocation -> path <> maybe "" (rawParagraph . norgLocationDescription) norgLocation
+    ExternalFile path lineNumber -> path <> "-" <> pack (show lineNumber)
 
 
