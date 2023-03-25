@@ -1,9 +1,11 @@
 module Neorg.Parser.Tag where
 
-import Control.Applicative (liftA2, liftA3)
+import Control.Applicative (liftA2)
 import Control.Monad
 import Data.List (intersperse)
-import Data.Text (Text, pack)
+import Data.Map qualified as M
+import Data.Maybe
+import Data.Text (Text, pack, unpack)
 import Neorg.Document
 import Neorg.Parser.Base
 import Neorg.Parser.Combinators
@@ -17,18 +19,18 @@ tagBreak = try $ lookAhead $ do
 
 verbatimRangedTag :: Parser VerbatimRangedTag
 verbatimRangedTag = do
-  (whitespaceToSkip, name, parameters) <- try $ do
+  (whitespaceToSkip, name) <- try $ do
     char '@'
-    liftA3
-      (,,)
+    liftA2
+      (,)
       (pred . pred . unPos . sourceColumn <$> getSourcePos)
       tagName
-      tagParameters
   guard $ name /= "end"
+  let maybeTag = M.lookup name validTags
+  tagType <- fromMaybe (fail $ "Tag " <> unpack name <> " is not supported") maybeTag
   newline
   !content <- withinTag '@' whitespaceToSkip takeLine
-
-  pure $ VerbatimRangedTagCons name parameters $ mconcat $ intersperse "\n" $ filter (/= "") content
+  pure $ VerbatimRangedTagCons tagType $ mconcat $ intersperse "\n" $ filter (/= "") content
 
 withinTag :: Char -> Int -> Parser a -> Parser [a]
 withinTag tagChar tagOffset lineParser = lexeme content
@@ -45,5 +47,10 @@ withinTag tagChar tagOffset lineParser = lexeme content
 tagName :: Parser Text
 tagName = lexemeSpaces $ takeWhile1Chars (Just "Tag name") (`notElem` (" \n" :: String))
 
-tagParameters :: Parser [Text]
-tagParameters = many $ lexemeSpaces $ takeWhile1Chars (Just "Tag name") (`notElem` (" \n" :: String))
+textParameter :: Parser Text
+textParameter = lexemeSpaces $ takeWhile1Chars (Just "Tag paremter") (`notElem` (" \n" :: String))
+
+validTags :: M.Map Text (Parser VerbatimRangedTagType)
+validTags = M.fromList [codeTag]
+  where
+    codeTag = ("code", VerbatimRangedTagCode <$> optional textParameter)
