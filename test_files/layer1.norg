@@ -1,20 +1,6 @@
-* Testing links
+* Verbatim code
 
-** Some *Heading*
-
-** Another Heading
-
-  Text for line number link
-
-   {** Some Heading}
-
-   {# Some *Heading*}
-    
-   {# Some Heading}[A link]
-
-{7}
-
-   {7}[File link]
-
-
-  {/ README.md}
+  @code haskell
+    main :: IO ()
+    main = print "hello"
+  @end

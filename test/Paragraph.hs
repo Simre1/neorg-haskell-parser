@@ -2,24 +2,23 @@ module Paragraph where
 
 import Data.Text
 import Neorg.Document
-import Neorg.Parser.Paragraph (paragraph, paragraphSegment)
+import Neorg.Parser qualified as Parser
 import Test.HUnit
 import Test.Hspec
-import qualified Neorg.Parser as Parser
 
 parseParagraph :: Text -> IO Paragraph
 parseParagraph text = case Parser.parseParagraph text of
-  Left error -> assertFailure (unpack error)
+  Left parseError -> assertFailure (unpack parseError)
   Right a -> pure a
 
 parseParagraphShouldFail :: Text -> IO ()
 parseParagraphShouldFail text = case Parser.parseParagraph text of
-  Left error -> pure ()
+  Left _ -> pure ()
   Right a -> assertFailure ("Should have failed, but returned:\n" ++ show a)
 
 parseParagraphSegment :: Text -> IO Paragraph
 parseParagraphSegment text = case Parser.parseParagraphSegment text of
-  Left error -> assertFailure (unpack error)
+  Left parseError -> assertFailure (unpack parseError)
   Right a -> pure a
 
 paragraphSpec :: Spec
@@ -291,19 +290,19 @@ paragraphSpec = describe "Paragraph" $ do
 
   it "Link with a norg file location a heading" $ do
     let input = "{:path:* heading}"
-        expectation = ParagraphCons [Link (NorgFile "path" (Just $ HeadingLocation 1 $ ParagraphCons $ [Word "heading"])) Nothing]
+        expectation = ParagraphCons [Link (NorgFile "path" (Just $ HeadingLocation 1 $ ParagraphCons [Word "heading"])) Nothing]
     result <- parseParagraph input
     expectation @=? result
 
   it "Link with a norg file location a magic location" $ do
     let input = "{:path:# magic}"
-        expectation = ParagraphCons [Link (NorgFile "path" (Just $ MagicLocation $ ParagraphCons $ [Word "magic"])) Nothing]
+        expectation = ParagraphCons [Link (NorgFile "path" (Just $ MagicLocation $ ParagraphCons [Word "magic"])) Nothing]
     result <- parseParagraph input
     expectation @=? result
 
   it "Link with a magic location" $ do
     let input = "{# magic}"
-        expectation = ParagraphCons [Link (CurrentFile (MagicLocation $ ParagraphCons $ [Word "magic"])) Nothing]
+        expectation = ParagraphCons [Link (CurrentFile (MagicLocation $ ParagraphCons [Word "magic"])) Nothing]
     result <- parseParagraph input
     expectation @=? result
 
@@ -315,7 +314,7 @@ paragraphSpec = describe "Paragraph" $ do
 
   it "Link with heading location" $ do
     let input = "{*** heading}"
-        expectation = ParagraphCons [Link (CurrentFile (HeadingLocation 3 $ ParagraphCons $ [Word "heading"])) Nothing]
+        expectation = ParagraphCons [Link (CurrentFile (HeadingLocation 3 $ ParagraphCons [Word "heading"])) Nothing]
     result <- parseParagraph input
     expectation @=? result
 

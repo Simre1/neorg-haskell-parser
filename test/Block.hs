@@ -2,20 +2,18 @@ module Block where
 
 import Data.Text
 import Neorg.Document
-import Neorg.Parser.Base (emptyLines)
-import Neorg.Parser.Block (blocks)
+import Neorg.Parser qualified as Parser
 import Test.HUnit
 import Test.Hspec
-import qualified Neorg.Parser as Parser
 
 parseBlocks :: Text -> IO Blocks
 parseBlocks text = case Parser.parseBlocks text of
-  Left error -> assertFailure (unpack error)
+  Left parseError -> assertFailure (unpack parseError)
   Right a -> pure a
 
 parseBlocksShouldFail :: Text -> IO ()
 parseBlocksShouldFail text = case Parser.parseBlocks text of
-  Left error -> pure ()
+  Left _ -> pure ()
   Right a -> assertFailure ("Should have failed, but returned:\n" ++ show a)
 
 blockSpec :: Spec
@@ -416,14 +414,16 @@ delimiterSpec = describe "Quote" $
       let input = "* heading\n** heading\n---\nSome text"
           expectation =
             Blocks
-              [ Block 1 $ Heading $
-                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
-                    Blocks
-                      [ Block 2 $ Heading $
-                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
-                            Blocks [],
-                        Block 4 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
-                      ]
+              [ Block 1 $
+                  Heading $
+                    HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                      Blocks
+                        [ Block 2 $
+                            Heading $
+                              HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                                Blocks [],
+                          Block 4 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
+                        ]
               ]
       result <- parseBlocks input
       expectation @=? result
@@ -440,13 +440,15 @@ delimiterSpec = describe "Quote" $
       let input = "* heading\n** heading\n===\nSome text"
           expectation =
             Blocks
-              [ Block 1 $ Heading $
-                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
-                    Blocks
-                      [ Block 2 $ Heading $
-                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
-                            Blocks []
-                      ],
+              [ Block 1 $
+                  Heading $
+                    HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                      Blocks
+                        [ Block 2 $
+                            Heading $
+                              HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                                Blocks []
+                        ],
                 Block 4 $ NestableBlock $ Paragraph $ ParagraphCons [Word "Some", Space, Word "text"]
               ]
 
@@ -457,25 +459,28 @@ delimiterSpec = describe "Quote" $
       let input = "* heading\n** heading\n=== Some text"
           expectation =
             Blocks
-              [ Block 1 $ Heading $
-                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
-                    Blocks
-                      [ Block 2 $ Heading $
-                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
-                            Blocks
-                              [ Block 3 $ NestableBlock $
-                                  Paragraph $
-                                    ParagraphCons
-                                      [ Punctuation '=',
-                                        Punctuation '=',
-                                        Punctuation '=',
-                                        Space,
-                                        Word "Some",
-                                        Space,
-                                        Word "text"
-                                      ]
-                              ]
-                      ]
+              [ Block 1 $
+                  Heading $
+                    HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                      Blocks
+                        [ Block 2 $
+                            Heading $
+                              HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                                Blocks
+                                  [ Block 3 $
+                                      NestableBlock $
+                                        Paragraph $
+                                          ParagraphCons
+                                            [ Punctuation '=',
+                                              Punctuation '=',
+                                              Punctuation '=',
+                                              Space,
+                                              Word "Some",
+                                              Space,
+                                              Word "text"
+                                            ]
+                                  ]
+                        ]
               ]
 
       result <- parseBlocks input
@@ -485,30 +490,33 @@ delimiterSpec = describe "Quote" $
       let input = "* heading\n** heading\n--- Some text"
           expectation =
             Blocks
-              [ Block 1 $ Heading $
-                  HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
-                    Blocks
-                      [ Block 2 $ Heading $
-                          HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
-                            Blocks
-                              [ Block 3 $ NestableBlock $
-                                  List $
-                                    ListCons
-                                      3
-                                      UnorderedList
-                                      [ ( Nothing,
-                                          NestableBlocks
-                                            [ Paragraph $
-                                                ParagraphCons
-                                                  [ Word "Some",
-                                                    Space,
-                                                    Word "text"
+              [ Block 1 $
+                  Heading $
+                    HeadingCons 1 Nothing (ParagraphCons [Word "heading"]) $
+                      Blocks
+                        [ Block 2 $
+                            Heading $
+                              HeadingCons 2 Nothing (ParagraphCons [Word "heading"]) $
+                                Blocks
+                                  [ Block 3 $
+                                      NestableBlock $
+                                        List $
+                                          ListCons
+                                            3
+                                            UnorderedList
+                                            [ ( Nothing,
+                                                NestableBlocks
+                                                  [ Paragraph $
+                                                      ParagraphCons
+                                                        [ Word "Some",
+                                                          Space,
+                                                          Word "text"
+                                                        ]
                                                   ]
+                                              )
                                             ]
-                                        )
-                                      ]
-                              ]
-                      ]
+                                  ]
+                        ]
               ]
 
       result <- parseBlocks input
@@ -519,21 +527,21 @@ tagSpec = describe "Heading" $ do
   it "Verbatim ranged tag" $ do
     let input = "@code\ntest\n@end"
         expectation =
-          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons (VerbatimRangedTagCode Nothing) "test"]
     result <- parseBlocks input
     expectation @=? result
 
   it "Verbatim ranged tag multiple lines" $ do
     let input = "@code\ntest \n  test\n@end"
         expectation =
-          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test \n  test"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons (VerbatimRangedTagCode Nothing) "test \n  test"]
     result <- parseBlocks input
     expectation @=? result
 
   it "Verbatim ranged tag with indentation" $ do
     let input = "  @code\n  test\n  test\n  @end"
         expectation =
-          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons (VerbatimRangedTagCode Nothing) "test\ntest"]
     result <- parseBlocks input
     expectation @=? result
 
@@ -548,6 +556,21 @@ tagSpec = describe "Heading" $ do
   it "Verbatim ranged tag with empty lines" $ do
     let input = "  @code\n \n  test\n  test\n  @end"
         expectation =
-          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons "code" [] "test\ntest"]
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons (VerbatimRangedTagCode Nothing) "test\ntest"]
     result <- parseBlocks input
     expectation @=? result
+
+  it "Verbatim ranged tag with parameters" $ do
+    let input = "  @code haskell\n \n  test\n  test\n  @end"
+        expectation =
+          Blocks [Block 1 $ NestableBlock $ VerbatimRangedTag $ VerbatimRangedTagCons (VerbatimRangedTagCode $ Just "haskell") "test\ntest"]
+    result <- parseBlocks input
+    expectation @=? result
+
+  it "Verbatim ranged tag with too many parameters" $ do
+    let input = "  @code haskell lua\n \n  test\n  test\n  @end"
+    parseBlocksShouldFail input
+
+  it "Verbatim ranged tag with unknown tag" $ do
+    let input = "@sometag\n@end"
+    parseBlocksShouldFail input

@@ -1,7 +1,7 @@
 module Neorg.Document where
 
-import Data.Text
 import Data.Maybe (fromMaybe)
+import Data.Text
 import GHC.Generics (Generic)
 
 newtype Document = Document Blocks deriving (Show, Eq, Generic)
@@ -82,9 +82,13 @@ data List = ListCons
 data ListOrdering = OrderedList | UnorderedList deriving (Show, Eq, Generic)
 
 data VerbatimRangedTag = VerbatimRangedTagCons
-  { tag :: Text,
-    parameters :: [Text],
+  { tag :: VerbatimRangedTagType,
     content :: Text
+  }
+  deriving (Show, Eq, Generic)
+
+newtype VerbatimRangedTagType = VerbatimRangedTagCode
+  { language :: Maybe Text
   }
   deriving (Show, Eq, Generic)
 
@@ -130,5 +134,3 @@ rawParagraph (ParagraphCons paraElements) = flip foldMap paraElements $ \case
     Url path -> path
     NorgFile path norgLocation -> path <> maybe "" (rawParagraph . norgLocationDescription) norgLocation
     ExternalFile path lineNumber -> path <> "-" <> pack (show lineNumber)
-
-

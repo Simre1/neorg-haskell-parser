@@ -3,22 +3,18 @@ module Main where
 import Control.Monad
 import Control.Monad.Trans.Class (MonadTrans (lift))
 import Control.Monad.Trans.Reader
-import Control.Monad.Trans.State
 import Data.Aeson (encode)
 import Data.ByteString.Lazy qualified as B
-import Data.Foldable (minimumBy)
 import Data.Maybe
-import Data.Set qualified as S
 import Data.Text (Text, pack)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Neorg.Document
+import Neorg.Parser (parseDocument)
+import Neorg.SemanticAnalysis
 import Options.Applicative
-import System.Environment (getArgs)
 import System.IO (stderr)
 import Text.Pandoc.Builder qualified as P
-import Neorg.SemanticAnalysis
-import Neorg.Parser (parseDocument)
 
 data InputArgs = TransformFile String | TransformSTDIN
 
@@ -76,12 +72,13 @@ convertNestableBlock = \case
   Paragraph i -> P.para <$> convertParagraph i
   Quote quote -> convertQuote quote
   List list -> convertList list
+  VerbatimRangedTag verbatimRangedTag -> convertVerbatimRangedTag verbatimRangedTag
 
 convertNestableBlocks :: NestableBlocks -> Convert P.Blocks
 convertNestableBlocks (NestableBlocks blocks) = mconcat <$> traverse convertNestableBlock blocks
 
 convertList :: List -> Convert P.Blocks
-convertList (ListCons level ordering items) = do
+convertList (ListCons _ ordering items) = do
   makeList <$> traverse makeItem items
   where
     makeItem (maybeTaskStatus, item) = do
@@ -97,14 +94,18 @@ convertHeading (HeadingCons level status title content) = do
   titleText <- convertParagraph title
   taskStatus <- traverse convertTaskStatus status
   ref <- norgLocationLink (HeadingLocation level title)
-  content <- convertBlocks content
-  pure $ P.headerWith (ref, [], []) level (maybe titleText (<> titleText) taskStatus) <> content
+  pandocContent <- convertBlocks content
+  pure $ P.headerWith (ref, [], []) level (maybe titleText (<> titleText) taskStatus) <> pandocContent
 
 convertQuote :: Quote -> Convert P.Blocks
-convertQuote (QuoteCons level status content) = do
+convertQuote (QuoteCons _ status content) = do
   taskStatus <- traverse convertTaskStatus status
   blocks <- convertNestableBlocks content
   pure $ P.blockQuote $ maybe mempty P.plain taskStatus <> blocks
+
+convertVerbatimRangedTag :: VerbatimRangedTag -> Convert P.Blocks
+convertVerbatimRangedTag (VerbatimRangedTagCons tagType content) = case tagType of
+  VerbatimRangedTagCode language -> pure $ P.codeBlockWith ("", maybeToList language, []) content
 
 convertTaskStatus :: TaskStatus -> Convert P.Inlines
 convertTaskStatus status = pure $ P.text $ case status of
@@ -125,8 +126,8 @@ convertParagraphElement = \case
   Word t -> pure $ P.text t
   Punctuation char -> pure $ P.str $ T.pack [char]
   Space -> pure P.space
-  StyledParagraph style para ->
-    let pandocStyle = case style of
+  StyledParagraph paraStyle para ->
+    let pandocStyle = case paraStyle of
           Bold -> P.strong
           Italic -> P.emph
           Underline -> P.underline
@@ -168,10 +169,9 @@ norgLocationLink norgLocation = do
       HeadingLocation _ paragraph -> pure $ linkLocationFromParagraph paragraph
       MagicLocation paragraph -> pure $ linkLocationFromParagraph paragraph
       LineNumberLocation ln -> pure $ linkLocationFromLineNumber ln
-  where 
+  where
     linkLocationFromParagraph p = T.pack "#" <> T.intercalate "-" (T.words $ T.toLower $ rawParagraph p)
     linkLocationFromLineNumber ln = pack "#" <> "line-number-" <> pack (show ln)
-
 
 logError :: Text -> IO ()
 logError = T.hPutStrLn stderr
