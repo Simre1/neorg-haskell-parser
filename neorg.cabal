@@ -12,6 +12,11 @@ maintainer:         Simon Reitinger
 copyright:          Simon Reitinger
 category:           Text
 extra-source-files: CHANGELOG.md
+tested-with: GHC ==9.2.5
+
+source-repository head
+  type: git
+  location: https://github.com/Simre1/neorg-haskell-parser
 
 common common
   ghc-options: -Wall
