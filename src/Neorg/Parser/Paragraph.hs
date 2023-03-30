@@ -13,13 +13,15 @@ import Neorg.Parser.Combinators
 import Neorg.Parser.Delimiter (delimiterBreak)
 import Neorg.Parser.Tag
 import Text.Megaparsec hiding (satisfy)
+import Optics.Core
+import GHC.Generics (Generic)
 
 type ParagraphParser a = StateT ParagraphState Parser a
 
 newtype ParagraphState = ParagraphState
   { previousElement :: ParagraphElement
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 paragraphSegment :: Parser Paragraph
 paragraphSegment = lexeme $ paragraphWithEnd (True <$ paragraphSegmentBreak)
@@ -156,7 +158,7 @@ attachedModifierStart c = try $ do
             (Punctuation _) -> True
             _ -> False
         )
-      . previousElement
+      . view #previousElement
   lift $ char c
   lift $ notFollowedBy (space <|> void newline <|> void eof)
   pure ()
@@ -168,7 +170,7 @@ attachedModifierEnd c = try $ do
             Space -> False
             _ -> True
         )
-      . previousElement
+      . view #previousElement
   lift $ char c
   lift $ followedBy $ space <|> void punctuation <|> void newline <|> void eof
 

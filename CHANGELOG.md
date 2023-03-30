@@ -2,6 +2,8 @@
 
 ## 0.2.0.0 -- TBD
 
+- Testing in the pipeline added
+- Markdown / Norg testing added
 - Stable Layer 2 support
 - Better link handling
 - Added version bounds on dependencies

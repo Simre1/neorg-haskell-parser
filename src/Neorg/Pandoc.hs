@@ -11,31 +11,41 @@ import Neorg.Document
 import Neorg.SemanticAnalysis
 import System.IO (stderr)
 import Text.Pandoc.Builder qualified as P
+import Optics.Core
+import GHC.Generics (Generic)
 
 convertDocument :: Document -> IO P.Pandoc
 convertDocument document@(Document blocks) = runConvert (extractDocumentInformation document) $ P.doc <$> convertBlocks blocks
 
 convertBlock :: Block -> Convert P.Blocks
-convertBlock (Block _ blockContent) = case blockContent of
-  Heading heading -> convertHeading heading
-  NestableBlock pb -> convertNestableBlock pb
-  HorizontalRule -> pure P.horizontalRule
-
+convertBlock (Block lineNumber blockContent) = do
+  pandocBlocks <- case blockContent of
+    Heading heading -> convertHeading heading
+    NestableBlock pb -> convertNestableBlock pb
+    HorizontalRule -> pure P.horizontalRule
+  
+  linkExists <- linkForLocationExists (LineNumberLocation lineNumber) <$> documentInfo
+  linkReference <- norgLocationLink (LineNumberLocation lineNumber)
+  pure $ if linkExists
+    then P.divWith (fromMaybe "" linkReference, [], []) pandocBlocks
+    else pandocBlocks
 convertBlocks :: Blocks -> Convert P.Blocks
 convertBlocks (Blocks blocks) = mconcat <$> traverse convertBlock blocks
 
 convertNestableBlock :: NestableBlock -> Convert P.Blocks
-convertNestableBlock = \case
-  Paragraph i -> P.para <$> convertParagraph i
-  Quote quote -> convertQuote quote
-  List list -> convertList list
-  VerbatimRangedTag verbatimRangedTag -> convertVerbatimRangedTag verbatimRangedTag
+convertNestableBlock nestableBlock = do
+  plainParagraphs <- areParagraphsPlain
+  case nestableBlock of
+    Paragraph i -> (if plainParagraphs then P.plain else P.para) <$> convertParagraph i
+    Quote quote -> convertQuote quote
+    List list -> convertList list
+    VerbatimRangedTag verbatimRangedTag -> convertVerbatimRangedTag verbatimRangedTag
 
 convertNestableBlocks :: NestableBlocks -> Convert P.Blocks
 convertNestableBlocks (NestableBlocks blocks) = mconcat <$> traverse convertNestableBlock blocks
 
 convertList :: List -> Convert P.Blocks
-convertList (ListCons _ ordering items) = do
+convertList (ListCons _ ordering items) = makeParagraphsPlain $ do
   makeList <$> traverse makeItem items
   where
     makeItem (maybeTaskStatus, item) = do
@@ -126,7 +136,7 @@ norgLocationLink norgLocation = do
       HeadingLocation _ paragraph -> pure $ Just $ linkLocationFromParagraph paragraph
       MagicLocation paragraph -> pure $ Just $ linkLocationFromParagraph paragraph
       LineNumberLocation ln -> 
-        if linkForLocationExists di location
+        if linkForLocationExists location di
           then pure $ Just $ linkLocationFromLineNumber ln
           else pure Nothing
   where
@@ -136,13 +146,27 @@ norgLocationLink norgLocation = do
 logError :: Text -> IO ()
 logError = T.hPutStrLn stderr
 
-newtype Convert a = Convert (ReaderT DocumentInformation IO a) deriving (Functor, Applicative, Monad)
+newtype Convert a = Convert (ReaderT ConvertContext IO a) deriving (Functor, Applicative, Monad)
+
+data ConvertContext = ConvertContext {
+  documentInfo :: DocumentInformation,
+  plainParagraphs :: Bool
+} deriving (Eq, Show, Generic)
 
 warning :: Text -> Convert ()
 warning t = Convert $ lift $ logError t
 
 documentInfo :: Convert DocumentInformation
-documentInfo = Convert ask
+documentInfo = Convert $ view #documentInfo <$> ask
+
+areParagraphsPlain :: Convert Bool
+areParagraphsPlain = Convert $ view #plainParagraphs <$> ask
+
+makeParagraphsPlain :: Convert a -> Convert a
+makeParagraphsPlain = localContext $ #plainParagraphs .~ True
 
 runConvert :: DocumentInformation -> Convert a -> IO a
-runConvert di (Convert io) = runReaderT io di
+runConvert di (Convert io) = runReaderT io $ ConvertContext di False
+
+localContext :: (ConvertContext -> ConvertContext) -> Convert a -> Convert a
+localContext f (Convert r) = Convert $ local f r

@@ -9,6 +9,8 @@ import Neorg.Parser.Delimiter
 import Neorg.Parser.Paragraph (paragraph, paragraphSegment)
 import Neorg.Parser.Tag
 import Text.Megaparsec
+import Optics.Core
+import GHC.Generics (Generic)
 
 blocks :: Parser Blocks
 blocks = blocks' 0
@@ -35,7 +37,7 @@ blocks' envHeadingLevel = emptyLines >> (Blocks <$> many block) >-> optional wea
 data NestableBlockEnv = NestableBlockEnv
   { listLevel :: Int,
     quoteLevel :: Int
-  }
+  } deriving (Show, Eq, Generic)
 
 nestableBlock :: NestableBlockEnv -> Parser NestableBlock
 nestableBlock nestableBlockEnv = do
@@ -71,15 +73,15 @@ quote nestableBlockEnv = do
   notFollowedBy nestableBlockBreak
   level <- try $ do
     level <- quotePrefix
-    guard $ level > quoteLevel nestableBlockEnv
+    guard $ level > nestableBlockEnv ^. #quoteLevel
     pure level
   status <- taskStatus
-  content <- nestableBlocks (nestableBlockEnv {quoteLevel = level})
+  content <- nestableBlocks (nestableBlockEnv & #quoteLevel .~ level)
   pure $ QuoteCons level status content
   where
     quotePrefix = try $ do
       level <- detachedModifier '>'
-      guard $ level > quoteLevel nestableBlockEnv
+      guard $ level > nestableBlockEnv ^. #quoteLevel
       pure level
 
 list :: NestableBlockEnv -> Parser List
@@ -96,11 +98,11 @@ list nestableBlockEnv = do
         guard $ level == envLevel
         pure level
       status <- taskStatus
-      itemContent <- nestableBlocks (nestableBlockEnv {listLevel = level})
+      itemContent <- nestableBlocks (nestableBlockEnv & #listLevel .~ level)
       pure (status, itemContent)
     listPrefix = try $ do
       prefix@(level, _) <- choice [(,UnorderedList) <$> detachedModifier '-', (,OrderedList) <$> detachedModifier '~']
-      guard $ level > listLevel nestableBlockEnv
+      guard $ level > nestableBlockEnv ^. #listLevel
       pure prefix
 
 heading :: Int -> Parser Heading

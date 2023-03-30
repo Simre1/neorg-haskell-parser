@@ -10,27 +10,14 @@ Help me to find all edge cases of the parser. If you find a parsing error, you c
 
 I will focus on the first three layers for now. Layers 4 and 5 are on hold for now.
 
-- [x] Layer 1: Paragraphs
-- [x] Layer 2:
-  - [x] Heading
-  - [x] Lists
-  - [x] Quotes
-  - [x] More link locations
-  - [x] Verbatim Ranged tags
-  - [x] Delimiting modifiers
+- [x] Layer 1
+- [x] Layer 2
 - [ ] Layer 3
-- [ ] PDF creation
 
 ## Pandoc Implementation State
 
-- [x] Layer 1: Paragraphs
-- [x] Layer 2:
-  - [x] Heading
-  - [x] Lists
-  - [x] Quotes
-  - [x] More link locations (not sure how to do this with pandoc)
-  - [x] Verbatim Ranged tags
-  - [x] Delimiting modifiers
+- [x] Layer 1
+- [x] Layer 2
 - [ ] Layer 3
 - [ ] PDF creation
 
@@ -71,3 +58,12 @@ Here, I have used the `neorg-pandoc-linux86` binary to transform my `norg` file 
 
 1. Fix one of the issues
 2. Find parsing errors and create issues for them using the parsing error template
+
+### Testing Pipeline
+
+I have set up a Github Action pipeline which runs the tests for neorg. So you do not need to worry much that you break something, since it will be detected most of the time.
+
+There are two kinds of tests:
+- `parser-tests`: Small snippets are parsed and the resulting AST is validated
+- `norg-markdown-equal-test`: Norg and Markdown files are parsed and the resulting Pandoc AST is checked for equality
+

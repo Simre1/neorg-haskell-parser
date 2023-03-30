@@ -58,13 +58,13 @@ findNorgLocation :: DocumentInformation -> NorgLocation -> Maybe NorgLocation
 findNorgLocation di nl = case nl of
   LineNumberLocation x ->
     if S.size lineNumbers > 0
-      then Just $ LineNumberLocation $ minimumBy (\a b -> abs (b - x) `compare` abs (a - x)) lineNumbers
+      then Just $ LineNumberLocation $ minimumBy (\a b -> abs (a - x) `compare` abs (b - x)) lineNumbers
       else Nothing
   HeadingLocation level location -> HeadingLocation level <$> M.lookup (rawParagraph location) rawTextHeadings
   MagicLocation location -> MagicLocation <$> M.lookup (rawParagraph location) rawTextHeadings
   where
-    (LinkTargets lineNumbers headings) = linkTargets di
+    (LinkTargets lineNumbers headings) = di ^. #linkTargets
     rawTextHeadings = M.fromList $ (\x -> (rawParagraph x, x)) <$> S.toList headings
 
-linkForLocationExists :: DocumentInformation -> NorgLocation -> Bool
-linkForLocationExists di nl = nl `S.member` (di ^. #norgLinks % coerced)
+linkForLocationExists :: NorgLocation -> DocumentInformation -> Bool
+linkForLocationExists nl di = nl `S.member` (di ^. #norgLinks % coerced)
