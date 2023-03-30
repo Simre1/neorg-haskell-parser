@@ -47,8 +47,11 @@ library
       Neorg.Parser.Tag
       Neorg.Document
       Neorg.SemanticAnalysis
+
+      Neorg.Pandoc
     build-depends:
       megaparsec ^>=9.3.0,
+      pandoc-types >=1.23 && <1.24,
     hs-source-dirs:   src
 
 executable neorg-pandoc
@@ -56,16 +59,32 @@ executable neorg-pandoc
     main-is:          Main.hs
     build-depends:
         neorg,
-        bytestring ^>= 0.11.4,
+        bytestring ^>= 0.11.3,
         aeson ^>= 2.1.2,
-        pandoc-types ^>= 1.23,
+        pandoc-types >=1.23 && <1.24,
         optparse-applicative ^>= 0.17
     hs-source-dirs:   app
 
-test-suite neorg-test
+test-suite norg-markdown-equal-test
     import: common
     type:             exitcode-stdio-1.0
-    hs-source-dirs:   test
+    hs-source-dirs:   test/norg-markdown-equal
+    main-is:          Main.hs
+    other-modules:
+    build-depends:    
+      base ^>=4.16.4.0,
+      neorg,
+      hspec ^>= 2.10,
+      HUnit ^>= 1.6,
+      directory,
+      filepath,
+      aeson,
+      typed-process
+
+test-suite parser-test
+    import: common
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test/parser
     main-is:          Main.hs
     other-modules:
       Paragraph
