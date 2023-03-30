@@ -1,6 +1,0 @@
-* Verbatim code
-
-  @code haskell
-    main :: IO ()
-    main = print "hello"
-  @end
