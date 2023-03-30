@@ -1,0 +1,17 @@
+* Tags
+
+@code haskell
+main :: IO ()
+main = print "Hello"
+@end
+
+  @code haskell
+  main :: IO ()
+  main = print "Hello"
+  @end
+
+* Links
+
+  {* Tags}
+
+  {* Tags}[Link]

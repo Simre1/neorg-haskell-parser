@@ -11,8 +11,11 @@ author:             Simon Reitinger
 maintainer:         Simon Reitinger
 copyright:          Simon Reitinger
 category:           Text
-extra-source-files: CHANGELOG.md
-tested-with: GHC ==9.2.5
+extra-doc-files:    CHANGELOG.md
+tested-with: GHC ==9.4.4
+extra-source-files:
+  test/norg-markdown-equal/test_files/**/*.norg,
+  test/norg-markdown-equal/test_files/**/*.md
 
 source-repository head
   type: git
@@ -26,11 +29,12 @@ common common
     LambdaCase,
     DuplicateRecordFields,
     OverloadedLabels,
-    TupleSections
+    TupleSections,
+    NoFieldSelectors
   build-depends:
-    base ^>=4.16.4.0,
+    base ^>=4.17,
     containers ^>=0.6,
-    transformers ^>= 0.6.1,
+    transformers >= 0.5.6.2 && < 0.7,
     text ^>= 2.0,
     optics-core ^>= 0.4
 
@@ -70,16 +74,16 @@ test-suite norg-markdown-equal-test
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test/norg-markdown-equal
     main-is:          Main.hs
-    other-modules:
+    other-modules:    
     build-depends:    
-      base ^>=4.16.4.0,
+      base ^>=4.17,
       neorg,
       hspec ^>= 2.10,
       HUnit ^>= 1.6,
-      directory,
-      filepath,
-      aeson,
-      typed-process
+      directory ^>= 1.3,
+      filepath ^>= 1.4,
+      aeson ^>= 2.1.2,
+      typed-process ^>= 0.2.11
 
 test-suite parser-test
     import: common
@@ -90,7 +94,7 @@ test-suite parser-test
       Paragraph
       Block
     build-depends:    
-      base ^>=4.16.4.0,
+      base ^>=4.17,
       neorg,
       hspec ^>= 2.10,
       HUnit ^>= 1.6
